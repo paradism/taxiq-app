@@ -21,7 +21,7 @@ const pct = n => (n * 100).toFixed(1) + "%";
 // ═══════════════════════════════════════════
 // STRIPE CONFIG — Replace with your real IDs
 // ═══════════════════════════════════════════
-const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/YOUR_PAYMENT_LINK_HERE";
+const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/test_7sY5kFduz0ePfONbcvfAc00";
 // Create at: Stripe Dashboard → Payment Links → New
 // Product: "TaxIQ Pro", Price: $79/year (recurring)
 // After payment redirect: your app URL + ?upgraded=true
