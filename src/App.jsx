@@ -347,6 +347,7 @@ function ProfileModal({ profile, setProfile, onClose, isPro, onUpgrade, isMobile
   );
 }
 
+
 // ═══════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════
@@ -361,32 +362,64 @@ function Dashboard({ data, go, profile, isPro, onUpgrade, isMobile }) {
   const fed = calcFed(adjInc, lt, st, profile.filing, stTax.tax);
   const seTax = isPro ? Math.round(profile.freelance*0.9235*0.153) : 0;
   const totalTax = fed.tot + stTax.tax + seTax;
+  const takeHome = Math.max(totalIncome - totalTax, 0);
   const hSave = hasPortfolio ? Object.values(pf).flatMap(d=>d.lots.filter(l=>l.unrealized<0)).reduce((s,l)=>s+Math.abs(l.unrealized),0)*fed.marg : 0;
-  const risk = Math.min(Math.max(12+Object.keys(pf).length*3+ws.length*10+(tv>200000?10:0)+(profile.foreign?12:0)+(profile.freelance>50000?8:0),0),100);
-  const rCol = risk>=55?C.rd:risk>=30?C.yl:C.em;
+
+  // Tax efficiency: how well are they using available deductions
+  const maxDed = 23000 + 7000 + 4150 + (profile.freelance > 0 ? Math.round(profile.freelance * 0.2) : 0);
+  const usedDed = profile.retirement401k + profile.retirementIRA;
+  const efficiency = maxDed > 0 ? Math.min(Math.round((usedDed / maxDed) * 100), 100) : 0;
+  const missedSave = Math.round((maxDed - usedDed) * fed.marg);
+  const eCol = efficiency >= 70 ? C.em : efficiency >= 40 ? C.yl : C.rd;
+
   const deadlines = [{d:"2026-04-15",nm:"Federal Return + FBAR"},{d:"2026-06-15",nm:"Q2 Est. Tax Payment"},{d:"2026-09-15",nm:"Q3 Est. Tax Payment"}].map(dl=>({...dl,days:Math.ceil((new Date(dl.d)-new Date())/864e5)}));
+
+  // Tax parts for hero breakdown
+  const taxParts = [
+    fed.inc > 0 && { label: "Federal", amount: fed.inc, color: C.bl },
+    fed.lt > 0 && { label: "Cap Gains", amount: fed.lt, color: C.em },
+    stTax.tax > 0 && { label: ST[profile.state]?.n, amount: stTax.tax, color: C.yl },
+    seTax > 0 && { label: "SE Tax", amount: seTax, color: C.pu },
+    fed.niit > 0 && { label: "NIIT", amount: fed.niit, color: C.rd },
+  ].filter(Boolean);
+
+  // Income sources for visualization
+  const incSrc = [
+    profile.salary > 0 && { label: "Salary", amount: profile.salary, color: C.bl },
+    isPro && profile.freelance > 0 && { label: "Freelance", amount: profile.freelance, color: C.pu },
+    isPro && profile.rentalNet > 0 && { label: "Rental", amount: profile.rentalNet, color: C.yl },
+    isPro && profile.dividends > 0 && { label: "Dividends", amount: profile.dividends, color: C.em },
+  ].filter(Boolean);
+
+  // Bracket position
+  const bks = FED_BRACKETS[profile.filing] || FED_BRACKETS.single;
+  const sd = STD_DED[profile.filing] || 14600;
+  const taxableOrd = Math.max(adjInc - sd, 0);
+  let bFloor = 0, bCeil = 0, curRate = 0, cumul = 0;
+  for (const [width, rate] of bks) { if (taxableOrd <= cumul + width) { bFloor = cumul; bCeil = cumul + width; curRate = rate; break; } cumul += width; }
+  const bPct = bCeil > bFloor ? Math.min(((taxableOrd - bFloor) / (bCeil - bFloor)) * 100, 100) : 0;
+  const nextRate = bks.find(([, r]) => r > curRate);
 
   return (
     <div style={{padding:isMobile?"16px 16px 80px":"24px 28px",overflowY:"auto",height:"100%"}}>
-      <div style={{textAlign:"center",padding:isMobile?"12px 0":"18px 0 12px"}}>
+      {/* Hero */}
+      <div style={{textAlign:"center",padding:isMobile?"12px 0 8px":"16px 0 10px"}}>
         <div style={{color:C.t3,fontSize:12,marginBottom:4}}>Estimated total tax liability <Chip color={C.bl} style={{marginLeft:6}}>{profile.filing==="mfj"?"MFJ":profile.filing==="mfs"?"MFS":profile.filing==="hoh"?"HOH":"Single"}</Chip></div>
         <div style={{fontSize:isMobile?36:46,fontWeight:700,fontFamily:fm,color:C.t1,letterSpacing:"-0.03em"}}>${$$(totalTax)}</div>
         <div style={{display:"flex",gap:isMobile?8:12,justifyContent:"center",marginTop:6,flexWrap:"wrap"}}>
-          <span style={{color:C.t3,fontSize:isMobile?11:12}}>Federal <strong style={{color:C.t1,fontFamily:fm}}>${$$(fed.tot)}</strong></span>
-          <span style={{color:C.t3,fontSize:isMobile?11:12}}>{ST[profile.state]?.n} <strong style={{color:stTax.tax>0?C.yl:C.em,fontFamily:fm}}>${$$(stTax.tax)}</strong></span>
-          {seTax>0&&<span style={{color:C.t3,fontSize:isMobile?11:12}}>SE <strong style={{color:C.pu,fontFamily:fm}}>${$$(seTax)}</strong></span>}
-          {fed.niit>0&&<span style={{color:C.t3,fontSize:isMobile?11:12}}>NIIT <strong style={{color:C.rd,fontFamily:fm}}>${$$(fed.niit)}</strong></span>}
+          {taxParts.map((tp,i)=><span key={i} style={{color:C.t3,fontSize:isMobile?11:12}}>{tp.label} <strong style={{color:tp.color,fontFamily:fm}}>${$$(tp.amount)}</strong></span>)}
         </div>
-        {!isPro && <div style={{marginTop:10}}><button onClick={onUpgrade} style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.emx}0.2)`,background:`${C.emx}0.06)`,color:C.em,fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:ff}}>⚡ Add freelance, rental & dividend income → Upgrade</button></div>}
+        {!isPro && totalIncome > 0 && <div style={{marginTop:10}}><button onClick={onUpgrade} style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.emx}0.2)`,background:`${C.emx}0.06)`,color:C.em,fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:ff}}>⚡ Add freelance, rental & dividend income → Upgrade</button></div>}
       </div>
 
+      {/* Stat cards */}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(3,1fr)":"repeat(auto-fit,minmax(112px,1fr))",gap:7,marginBottom:14}}>
         {[
-          ["Marginal Rate",pct(fed.marg),C.bl],
-          ["Eff. Rate",pct(totalTax/(totalIncome+lt+st||1)),C.bl],
-          ["Std Deduction",`$${$$(fed.ded)}`,C.em],
+          ["Take-Home",`$${$$(takeHome)}`,C.em],
+          ["Eff. Rate",pct(totalTax/(totalIncome||1)),C.bl],
+          ["Marginal",pct(fed.marg),C.bl],
+          ["Tax / Month",`$${$$(Math.round(totalTax/12))}`,C.yl],
           hasPortfolio&&["Portfolio",`$${$$(tv)}`,C.t1],
-          hasPortfolio&&["LT Gains",`$${$$(data.ltGains)}`,C.em],
           hasPortfolio&&["Harvestable",isPro?`$${$$(hSave)}`:"🔒",isPro?C.em:C.t4],
         ].filter(Boolean).map(([l,v,c],i)=>(
           <Box key={i} style={{padding:isMobile?9:11}} onClick={!isPro&&l==="Harvestable"?onUpgrade:undefined}><div style={{color:C.t3,fontSize:isMobile?8.5:9.5,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:2}}>{l}</div><div style={{color:c,fontSize:isMobile?13:15,fontWeight:700,fontFamily:fm}}>{v}</div></Box>
@@ -394,36 +427,110 @@ function Dashboard({ data, go, profile, isPro, onUpgrade, isMobile }) {
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14}}>
+        {/* LEFT COLUMN */}
         <div>
           {/* Insights */}
           {[
             hasPortfolio&&hSave>200&&{icon:"🌾",t:`Save ~$${$$(hSave)} by harvesting losses`,d:isPro?"Unrealized losses across stocks and crypto.":"Upgrade to see which positions to harvest.",tab:"save",col:C.em,pro:true},
             hasPortfolio&&ws.length>0&&{icon:"⚠️",t:`${ws.length} crypto wash sale${ws.length>1?"s":""} detected`,d:isPro?`$${$$(ws.reduce((s,w)=>s+w.disallowed,0))} in deductions at risk.`:"Upgrade to see details.",tab:"save",col:C.rd,pro:true},
-            stTax.tax>5000&&{icon:"✈️",t:`${ST[profile.state]?.n}: $${$$(stTax.tax)}/yr in state tax`,d:"Compare zero-tax states to see savings.",tab:"plan",col:C.bl,pro:false},
+            stTax.tax>2000&&{icon:"✈️",t:`${ST[profile.state]?.n}: $${$$(stTax.tax)}/yr in state tax`,d:"Compare zero-tax states to see potential savings.",tab:"plan",col:C.bl,pro:false},
             profile.foreign&&{icon:"🌍",t:"Foreign account reporting required",d:"FBAR and FATCA filings may apply.",tab:"comply",col:C.yl,pro:false},
-            fed.marg>=0.32&&{icon:"💡",t:`You're in the ${pct(fed.marg)} bracket`,d:"Deduction strategies could have outsized impact at this rate.",tab:"save",col:C.pu,pro:false},
+            missedSave>500&&{icon:"💡",t:`~$${$$(missedSave)} in potential deduction savings`,d:`You're using ${efficiency}% of available tax-advantaged accounts.`,tab:"save",col:efficiency>=40?C.yl:C.rd,pro:false},
+            fed.marg>=0.32&&{icon:"📊",t:`${pct(fed.marg)} bracket — deductions are high-leverage`,d:`Every $1,000 deducted saves you $${$$(Math.round(1000*fed.marg))}.`,tab:"save",col:C.pu,pro:false},
+            totalIncome>200000&&!fed.niit&&{icon:"📈",t:"Approaching NIIT threshold",d:`Investment income above $${$$(NIIT_TH[profile.filing]||200000)} AGI triggers 3.8% surtax.`,tab:"dash",col:C.yl,pro:false},
           ].filter(Boolean).map((ins,i)=>(
-            <Box key={i} onClick={()=>ins.pro&&!isPro?onUpgrade():go(ins.tab)} style={{marginBottom:7,borderLeft:`3px solid ${ins.col}`,cursor:"pointer"}}>
+            <Box key={i} onClick={()=>ins.pro&&!isPro?onUpgrade():ins.tab!=="dash"&&go(ins.tab)} style={{marginBottom:7,borderLeft:`3px solid ${ins.col}`,cursor:ins.tab!=="dash"?"pointer":"default"}}>
               <div style={{display:"flex",gap:10}}><span style={{fontSize:16}}>{ins.icon}</span><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{color:C.t1,fontSize:12.5,fontWeight:600,lineHeight:1.4}}>{ins.t}</span>{ins.pro&&!isPro&&<Chip color={C.em} style={{fontSize:8}}>PRO</Chip>}</div><div style={{color:C.t3,fontSize:11.5,marginTop:2}}>{ins.d}</div></div></div>
             </Box>
           ))}
-          {/* Holdings or empty state */}
-          {hasPortfolio ? ["stock","etf","crypto"].map(type=>{const items=Object.entries(pf).filter(([,d])=>d.type===type);if(!items.length)return null;return<div key={type}><div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginTop:8,marginBottom:5}}>{type==="etf"?"ETFs":type==="stock"?"Stocks":"Digital Assets"}</div>{items.sort((a,b)=>b[1].value-a[1].value).map(([a,d])=>(<Box key={a} style={{marginBottom:5,padding:11}}><div style={{display:"flex",alignItems:"center"}}><div style={{width:28,height:28,borderRadius:7,background:type==="crypto"?`${C.emx}0.08)`:`${C.bl}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,fontFamily:fm,color:type==="crypto"?C.em:C.bl,marginRight:10}}>{a}</div><div style={{flex:1}}><div style={{color:C.t1,fontSize:12,fontWeight:600}}>{d.name}</div><div style={{color:C.t4,fontSize:10}}>{d.qty<1?d.qty.toFixed(4):d.qty.toFixed(1)} × ${$$(d.price)}</div></div><div style={{textAlign:"right"}}><div style={{color:C.t1,fontSize:12,fontWeight:600,fontFamily:fm}}>${$$(d.value)}</div><span style={{color:d.pl>=0?C.em:C.rd,fontSize:10,fontFamily:fm}}>{d.pct>=0?"+":""}{d.pct.toFixed(1)}%</span></div></div></Box>))}</div>;})
-          : <Box style={{marginTop:8,padding:22,textAlign:"center",border:`1px dashed ${C.bd}`}}>
-            <div style={{fontSize:28,marginBottom:8}}>📊</div>
-            <div style={{color:C.t1,fontSize:13,fontWeight:600,marginBottom:4}}>Add your investments</div>
-            <div style={{color:C.t4,fontSize:12,lineHeight:1.5,marginBottom:12}}>Import your brokerage or exchange transactions to see portfolio value, capital gains, loss harvesting opportunities, and wash sale detection.</div>
-            <Chip color={C.t4}>CSV import coming soon</Chip>
+
+          {/* Bracket Position */}
+          <Box style={{marginBottom:7}}>
+            <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginBottom:8}}>Federal Bracket Position</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}>
+              <span style={{color:C.t1,fontSize:20,fontWeight:700,fontFamily:fm}}>{pct(curRate)}</span>
+              {nextRate&&<span style={{color:C.t4,fontSize:11}}>Next: {pct(nextRate[1])}</span>}
+            </div>
+            <div style={{height:6,background:C.s3,borderRadius:3,overflow:"hidden",marginBottom:6}}>
+              <div style={{height:"100%",width:`${bPct}%`,background:`linear-gradient(90deg, ${C.em}, ${C.bl})`,borderRadius:3,transition:"width 0.5s ease"}}/>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <span style={{color:C.t4,fontSize:10,fontFamily:fm}}>${$$(bFloor)}</span>
+              <span style={{color:C.t2,fontSize:10,fontFamily:fm,fontWeight:600}}>${$$(taxableOrd)} taxable</span>
+              <span style={{color:C.t4,fontSize:10,fontFamily:fm}}>${$$(bCeil > 1e10 ? taxableOrd * 2 : bCeil)}</span>
+            </div>
+          </Box>
+
+          {/* Income Breakdown */}
+          {incSrc.length > 0 && <Box style={{marginBottom:7}}>
+            <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginBottom:8}}>Income Sources</div>
+            <div style={{display:"flex",height:8,borderRadius:4,overflow:"hidden",marginBottom:10}}>
+              {incSrc.map((s,i)=><div key={i} style={{width:`${(s.amount/totalIncome)*100}%`,background:s.color,minWidth:4}}/>)}
+            </div>
+            {incSrc.map((s,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{width:8,height:8,borderRadius:2,background:s.color,flexShrink:0}}/>
+                  <span style={{color:C.t2,fontSize:12}}>{s.label}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{color:C.t1,fontSize:12,fontWeight:600,fontFamily:fm}}>${$$(s.amount)}</span>
+                  <span style={{color:C.t4,fontSize:10,fontFamily:fm,width:38,textAlign:"right"}}>{((s.amount/totalIncome)*100).toFixed(0)}%</span>
+                </div>
+              </div>
+            ))}
           </Box>}
+
+          {/* Holdings if portfolio exists */}
+          {hasPortfolio && ["stock","etf","crypto"].map(type=>{const items=Object.entries(pf).filter(([,d])=>d.type===type);if(!items.length)return null;return<div key={type}><div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginTop:8,marginBottom:5}}>{type==="etf"?"ETFs":type==="stock"?"Stocks":"Digital Assets"}</div>{items.sort((a,b)=>b[1].value-a[1].value).map(([a,d])=>(<Box key={a} style={{marginBottom:5,padding:11}}><div style={{display:"flex",alignItems:"center"}}><div style={{width:28,height:28,borderRadius:7,background:type==="crypto"?`${C.emx}0.08)`:`${C.bl}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,fontFamily:fm,color:type==="crypto"?C.em:C.bl,marginRight:10}}>{a}</div><div style={{flex:1}}><div style={{color:C.t1,fontSize:12,fontWeight:600}}>{d.name}</div><div style={{color:C.t4,fontSize:10}}>{d.qty<1?d.qty.toFixed(4):d.qty.toFixed(1)} × ${$$(d.price)}</div></div><div style={{textAlign:"right"}}><div style={{color:C.t1,fontSize:12,fontWeight:600,fontFamily:fm}}>${$$(d.value)}</div><span style={{color:d.pl>=0?C.em:C.rd,fontSize:10,fontFamily:fm}}>{d.pct>=0?"+":""}{d.pct.toFixed(1)}%</span></div></div></Box>))}</div>;})}
         </div>
+
+        {/* RIGHT COLUMN */}
         <div>
+          {/* Tax Breakdown */}
           <Box style={{marginBottom:10}}>
             <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginBottom:8}}>Tax Breakdown</div>
             <Row l="Gross Income" r={`$${$$(totalIncome)}`}/><Row l="Deductions" r={`-$${$$(absDed+fed.ded)}`} color={C.em}/><Row l="Taxable Income" r={`$${$$(Math.max(adjInc-fed.ded,0))}`}/>
-            <div style={{borderTop:`1px solid ${C.bd}`,margin:"4px 0"}}/><Row l="Federal Income Tax" r={`$${$$(fed.inc)}`}/><Row l="Capital Gains Tax" r={`$${$$(fed.lt)}`}/>{fed.niit>0&&<Row l="NIIT (3.8%)" r={`$${$$(fed.niit)}`} color={C.pu}/>}<Row l={`${ST[profile.state]?.n} Tax`} r={`$${$$(stTax.tax)}`} color={stTax.tax>0?C.yl:C.em}/>{seTax>0&&<Row l="SE Tax" r={`$${$$(seTax)}`} color={C.pu}/>}
-            <div style={{borderTop:`1px solid ${C.bd}`,margin:"4px 0"}}/><Row l="Total" r={`$${$$(totalTax)}`} color={C.rd}/>
+            <div style={{borderTop:`1px solid ${C.bd}`,margin:"4px 0"}}/>
+            <Row l="Federal Income Tax" r={`$${$$(fed.inc)}`}/>
+            {fed.lt>0&&<Row l="Capital Gains Tax" r={`$${$$(fed.lt)}`}/>}
+            {fed.niit>0&&<Row l="NIIT (3.8%)" r={`$${$$(fed.niit)}`} color={C.pu}/>}
+            <Row l={`${ST[profile.state]?.n} Tax`} r={`$${$$(stTax.tax)}`} color={stTax.tax>0?C.yl:C.em}/>
+            {seTax>0&&<Row l="SE Tax" r={`$${$$(seTax)}`} color={C.pu}/>}
+            <div style={{borderTop:`1px solid ${C.bd}`,margin:"4px 0"}}/>
+            <Row l="Total Tax" r={`$${$$(totalTax)}`} color={C.rd}/>
+            <Row l="Take-Home Pay" r={`$${$$(takeHome)}`} color={C.em}/>
           </Box>
-          <Box style={{marginBottom:10,cursor:"pointer"}} onClick={()=>go("comply")}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase"}}>Audit Risk</div><div style={{color:rCol,fontSize:24,fontWeight:700,fontFamily:fm,marginTop:2}}>{risk}<span style={{fontSize:12,color:C.t3}}>/100</span></div></div><svg width="48" height="48" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="none" stroke={C.s3} strokeWidth="4"/><circle cx="24" cy="24" r="20" fill="none" stroke={rCol} strokeWidth="4" strokeDasharray={`${risk*1.26} 126`} strokeLinecap="round" style={{transform:"rotate(-90deg)",transformOrigin:"center"}}/></svg></div></Box>
+
+          {/* Tax Efficiency (replaces fake Audit Risk) */}
+          <Box style={{marginBottom:10,cursor:"pointer"}} onClick={()=>go("save")}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase"}}>Tax Efficiency</div>
+                <div style={{color:eCol,fontSize:24,fontWeight:700,fontFamily:fm,marginTop:2}}>{efficiency}<span style={{fontSize:12,color:C.t3}}>%</span></div>
+                <div style={{color:C.t4,fontSize:10,marginTop:2}}>of deductions used</div>
+              </div>
+              <svg width="48" height="48" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="none" stroke={C.s3} strokeWidth="4"/><circle cx="24" cy="24" r="20" fill="none" stroke={eCol} strokeWidth="4" strokeDasharray={`${efficiency*1.26} 126`} strokeLinecap="round" style={{transform:"rotate(-90deg)",transformOrigin:"center"}}/></svg>
+            </div>
+            {missedSave>200&&<div style={{color:C.t4,fontSize:11,marginTop:6,paddingTop:6,borderTop:`1px solid ${C.bd}`}}>💡 Save ~<strong style={{color:eCol,fontFamily:fm}}>${$$(missedSave)}</strong> more by maxing tax-advantaged accounts</div>}
+          </Box>
+
+          {/* Where Your Dollar Goes */}
+          {totalIncome > 0 && <Box style={{marginBottom:10}}>
+            <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginBottom:8}}>Where Your Dollar Goes</div>
+            <div style={{display:"flex",height:8,borderRadius:4,overflow:"hidden",marginBottom:10}}>
+              <div style={{width:`${(totalTax/totalIncome)*100}%`,background:C.rd,minWidth:2}}/>
+              {absDed>0&&<div style={{width:`${(absDed/totalIncome)*100}%`,background:C.yl,minWidth:2}}/>}
+              <div style={{flex:1,background:C.em}}/>
+            </div>
+            <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+              <span style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.t2}}><div style={{width:6,height:6,borderRadius:1,background:C.rd}}/> Taxes {((totalTax/totalIncome)*100).toFixed(0)}%</span>
+              {absDed>0&&<span style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.t2}}><div style={{width:6,height:6,borderRadius:1,background:C.yl}}/> Saved {((absDed/totalIncome)*100).toFixed(0)}%</span>}
+              <span style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.t2}}><div style={{width:6,height:6,borderRadius:1,background:C.em}}/> Take-home {((takeHome/totalIncome)*100).toFixed(0)}%</span>
+            </div>
+          </Box>}
+
+          {/* Deadlines */}
           <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginBottom:5}}>Deadlines</div>
           {deadlines.map((dl,i)=>{const dCol=dl.days<=30?C.rd:dl.days<=90?C.yl:C.em;return<Box key={i} style={{marginBottom:5,padding:11,borderLeft:`3px solid ${dCol}`}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{color:C.t1,fontSize:11.5,fontWeight:600}}>{dl.nm}</div><div style={{color:C.t4,fontSize:10}}>{dl.d}</div></div><div style={{color:dCol,fontSize:15,fontWeight:700,fontFamily:fm}}>{dl.days}d</div></div></Box>;})}
         </div>
@@ -432,50 +539,327 @@ function Dashboard({ data, go, profile, isPro, onUpgrade, isMobile }) {
   );
 }
 
+
+
 // ═══════════════════════════════════════════
-// SAVE MONEY (fully gated)
+// SAVE MONEY
 // ═══════════════════════════════════════════
 function SaveMoney({ data, profile, isPro, onUpgrade, isMobile }) {
   const { pf, ws } = data;
   const hasPortfolio = Object.keys(pf).length > 0;
-  const [sub, setSub] = useState("deductions");
+  const totalIncome = profile.salary + profile.freelance + profile.rentalNet + profile.dividends;
   const stTax = calcSt(profile.state, profile.salary+profile.freelance, 0);
   const fed = calcFed(profile.salary+profile.freelance, 0, 0, profile.filing, stTax.tax);
   const rate = fed.marg;
-  const harvestable = hasPortfolio ? Object.entries(pf).flatMap(([a,d]) => d.lots.filter(l=>l.unrealized<0).map(l=>({asset:a,type:d.type,name:d.name,...l,save:Math.abs(l.unrealized)*rate}))).sort((a,b)=>a.unrealized-b.unrealized) : [];
-  const total = harvestable.reduce((s,h) => s+h.save, 0);
+
+  // Adaptive tabs: only show portfolio tabs when data exists
+  const tabs = hasPortfolio
+    ? [["deductions","📋 Deductions"],["harvest","🌾 Harvesting"],["wash",`⚠️ Wash Sales${ws.length?` (${ws.length})`:""}`],["retirement","🏦 Retirement"],["credits","🎯 Credits"]]
+    : [["deductions","📋 Deductions"],["retirement","🏦 Retirement"],["credits","🎯 Credits"]];
+  const [sub, setSub] = useState("deductions");
+
+  // === DEDUCTION STRATEGIES (interactive) ===
+  const [sim401k, setSim401k] = useState(profile.retirement401k);
+  const [simIRA, setSimIRA] = useState(profile.retirementIRA);
+  const [simHSA, setSimHSA] = useState(0);
+  const [simCharitable, setSimCharitable] = useState(isPro ? profile.charitable : 0);
+  const [simHomeOffice, setSimHomeOffice] = useState(isPro ? profile.homeOffice : 0);
+
+  const max401k = 23000, maxIRA = 7000, maxHSA = profile.filing === "mfj" ? 8300 : 4150;
+  const qbiAmount = profile.freelance > 0 ? Math.round(profile.freelance * 0.2) : 0;
+  const seHealthDed = profile.freelance > 0 ? Math.min(profile.freelance * 0.15, 12000) : 0; // estimate
+  const halfSE = profile.freelance > 0 ? Math.round(profile.freelance * 0.9235 * 0.153 / 2) : 0;
+
   const strategies = [
-    {id:"401k",nm:"Max 401(k)",desc:"Contribute full $23,000",current:profile.retirement401k,save:Math.round(Math.max(23000-profile.retirement401k,0)*rate)},
-    {id:"ira",nm:"Max IRA",desc:"$7,000 traditional IRA",current:profile.retirementIRA,save:Math.round(Math.max(7000-profile.retirementIRA,0)*rate)},
-    {id:"hsa",nm:"HSA",desc:"$4,150 triple-tax-advantaged",current:0,save:Math.round(4150*rate)},
-    profile.freelance>0&&{id:"qbi",nm:"QBI Deduction",desc:"20% of qualified business income",current:0,save:Math.round(profile.freelance*0.2*rate)},
+    {
+      id: "401k", icon: "🏛️", nm: "401(k) Contribution", max: max401k,
+      current: profile.retirement401k, sim: sim401k, setSim: setSim401k,
+      save: Math.round(Math.max(sim401k - profile.retirement401k, 0) * rate),
+      desc: "Pre-tax contributions reduce taxable income dollar-for-dollar.",
+      eligible: profile.salary > 0,
+      eligibleNote: profile.salary > 0 ? "Available through employer plan" : "Requires W-2 employment",
+      detail: `Max $23,000 in 2025 ($30,500 if 50+). Your employer may also match contributions.`,
+    },
+    {
+      id: "ira", icon: "📘", nm: "Traditional IRA", max: maxIRA,
+      current: profile.retirementIRA, sim: simIRA, setSim: setSimIRA,
+      save: Math.round(Math.max(simIRA - profile.retirementIRA, 0) * rate),
+      desc: "Tax-deductible contributions to individual retirement account.",
+      eligible: true,
+      eligibleNote: totalIncome < 87000 || !profile.salary ? "Fully deductible" : totalIncome < 107000 ? "Partially deductible (workplace plan phase-out)" : "May not be deductible (consider Roth)",
+      detail: `Max $7,000 in 2025 ($8,000 if 50+). Deductibility depends on income and employer plan access.`,
+    },
+    {
+      id: "hsa", icon: "🏥", nm: "Health Savings Account", max: maxHSA,
+      current: 0, sim: simHSA, setSim: setSimHSA,
+      save: Math.round(simHSA * rate),
+      desc: "Triple tax advantage: deductible contributions, tax-free growth, tax-free withdrawals for medical.",
+      eligible: true,
+      eligibleNote: "Requires high-deductible health plan (HDHP)",
+      detail: `Max $${$$(maxHSA)} in 2025 (${profile.filing==="mfj"?"family":"individual"}). Often called the best tax shelter in the US.`,
+    },
+    profile.freelance > 0 && {
+      id: "qbi", icon: "🧾", nm: "QBI Deduction (§199A)", max: qbiAmount, current: 0, sim: qbiAmount, setSim: null,
+      save: Math.round(qbiAmount * rate),
+      desc: "Automatic 20% deduction on qualified business income.",
+      eligible: profile.freelance > 0 && totalIncome < (profile.filing === "mfj" ? 383900 : 191950),
+      eligibleNote: totalIncome < (profile.filing === "mfj" ? 383900 : 191950) ? "You qualify based on income" : "Phase-out applies at your income level",
+      detail: `Deduct ${pct(0.20)} of your $${$$(profile.freelance)} freelance income = $${$$(qbiAmount)}. No action needed — taken automatically on your return.`,
+      auto: true,
+    },
+    profile.freelance > 0 && {
+      id: "sehalf", icon: "📋", nm: "½ Self-Employment Tax", max: halfSE, current: 0, sim: halfSE, setSim: null,
+      save: Math.round(halfSE * rate),
+      desc: "Deduct the employer-equivalent portion of your SE tax.",
+      eligible: profile.freelance > 0,
+      eligibleNote: "Automatic for self-employed filers",
+      detail: `Your SE tax is ~$${$$(halfSE * 2)}. Half ($${$$(halfSE)}) is deductible as an adjustment to income. Taken on Schedule SE.`,
+      auto: true,
+    },
+    profile.freelance > 0 && {
+      id: "sehealth", icon: "💊", nm: "SE Health Insurance Deduction", max: Math.round(seHealthDed), current: 0, sim: Math.round(seHealthDed), setSim: null,
+      save: Math.round(seHealthDed * rate),
+      desc: "Self-employed individuals can deduct health insurance premiums.",
+      eligible: profile.freelance > 0,
+      eligibleNote: "Must not be eligible for employer-sponsored plan",
+      detail: `Deduct premiums for yourself, spouse, and dependents. Above-the-line deduction — no need to itemize.`,
+      auto: true,
+    },
+    {
+      id: "charitable", icon: "🎁", nm: "Charitable Contributions", max: Math.round(totalIncome * 0.6), current: isPro ? profile.charitable : 0, sim: simCharitable, setSim: setSimCharitable,
+      save: simCharitable > (STD_DED[profile.filing] || 14600) ? Math.round(simCharitable * rate) : 0,
+      desc: "Deductible if you itemize — must exceed your standard deduction.",
+      eligible: true,
+      eligibleNote: simCharitable + (stTax.tax > 0 ? Math.min(stTax.tax, SALT_CAP) : 0) > (STD_DED[profile.filing] || 14600) ? "Would trigger itemizing" : `Need $${$$((STD_DED[profile.filing]||14600) - (stTax.tax > 0 ? Math.min(stTax.tax, SALT_CAP) : 0))}+ to exceed standard deduction`,
+      detail: `Standard deduction: $${$$(STD_DED[profile.filing]||14600)}. Charitable only saves tax if total itemized deductions exceed this.`,
+    },
   ].filter(Boolean);
 
-  const emptyPortfolioState = <Box style={{padding:28,textAlign:"center",border:`1px dashed ${C.bd}`}}>
-    <div style={{fontSize:28,marginBottom:8}}>📊</div>
-    <div style={{color:C.t1,fontSize:13,fontWeight:600,marginBottom:4}}>No investment data yet</div>
-    <div style={{color:C.t4,fontSize:12,lineHeight:1.5,marginBottom:10}}>Import your brokerage transactions to unlock tax-loss harvesting analysis and wash sale detection.</div>
-    <Chip color={C.t4}>CSV import coming soon</Chip>
-  </Box>;
+  const totalNewSavings = strategies.reduce((s, st) => s + st.save, 0);
 
-  const harvestContent = <>
-    <Box style={{marginBottom:14,textAlign:"center",padding:20}}><div style={{color:C.t3,fontSize:12,marginBottom:4}}>Potential tax savings at your {pct(rate)} marginal rate</div><div style={{color:C.em,fontSize:38,fontWeight:700,fontFamily:fm}}>${$$(total)}</div><div style={{color:C.t3,fontSize:11.5,marginTop:4}}>{harvestable.length} positions with unrealized losses</div></Box>
-    {harvestable.map((h,i)=>(<Box key={i} style={{marginBottom:5,padding:13,borderLeft:`3px solid ${h.type==="crypto"?C.em:C.bl}`}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{color:C.t1,fontSize:13,fontWeight:700}}>{h.asset}</span><Chip color={h.type==="crypto"?C.em:C.bl}>{h.type==="crypto"?"CRYPTO":"STOCK"}</Chip><Chip color={h.holdDays>365?C.bl:C.yl}>{h.holdDays>365?"LT":"ST"}</Chip></div><div style={{textAlign:"right"}}><div style={{color:C.rd,fontSize:11,fontFamily:fm}}>-${$$(Math.abs(h.unrealized))}</div><div style={{color:C.em,fontSize:14,fontWeight:700,fontFamily:fm}}>Save ${$$(h.save)}</div></div></div></Box>))}
-  </>;
+  // === HARVEST (only when portfolio exists) ===
+  const harvestable = hasPortfolio ? Object.entries(pf).flatMap(([a,d]) => d.lots.filter(l=>l.unrealized<0).map(l=>({asset:a,type:d.type,name:d.name,...l,save:Math.abs(l.unrealized)*rate}))).sort((a,b)=>a.unrealized-b.unrealized) : [];
+  const harvestTotal = harvestable.reduce((s,h) => s+h.save, 0);
+
+  // === RETIREMENT MODELING ===
+  const currentAge = 35; // default — could be profile field later
+  const retireAge = 65;
+  const yearsToRetire = retireAge - currentAge;
+  const annual401k = sim401k, annualIRA = simIRA, annualHSA = simHSA;
+  const totalAnnualRetirement = annual401k + annualIRA + annualHSA;
+  const growthRate = 0.07;
+  const futureValue = totalAnnualRetirement > 0 ? Math.round(totalAnnualRetirement * ((Math.pow(1 + growthRate, yearsToRetire) - 1) / growthRate)) : 0;
+  const taxSavedAnnually = Math.round(totalAnnualRetirement * rate);
+  const taxSaved30yr = Math.round(taxSavedAnnually * yearsToRetire);
+
+  // === TAX CREDITS ===
+  const credits = [
+    { id:"savers", icon:"💰", nm:"Saver's Credit", amount: totalIncome < (profile.filing==="mfj"?73000:36500) ? (totalAnnualRetirement > 0 ? Math.min(Math.round(totalAnnualRetirement * (totalIncome < (profile.filing==="mfj"?46000:23000) ? 0.5 : totalIncome < (profile.filing==="mfj"?50000:25000) ? 0.2 : 0.1)), profile.filing==="mfj"?2000:1000) : 0) : 0, eligible: totalIncome < (profile.filing==="mfj"?73000:36500), desc:"Credit for retirement contributions (10-50% of first $2,000/$4,000 contributed)", eligibleNote: totalIncome < (profile.filing==="mfj"?73000:36500) ? "You qualify based on income" : "Income exceeds threshold" },
+    { id:"child", icon:"👶", nm:"Child Tax Credit", amount: 0, eligible: true, desc:"$2,000 per qualifying child under 17. Partially refundable.", eligibleNote:"Applies if you have qualifying dependents" },
+    { id:"eitc", icon:"📈", nm:"Earned Income Tax Credit", amount: totalIncome < (profile.filing==="mfj"?63398:56838) && totalIncome > 0 ? Math.min(Math.round(totalIncome * 0.08), profile.filing==="mfj"?7430:6604) : 0, eligible: totalIncome < (profile.filing==="mfj"?63398:56838) && totalIncome > 0, desc:"Refundable credit for low-to-moderate income workers. Amount depends on income and dependents.", eligibleNote: totalIncome < (profile.filing==="mfj"?63398:56838) ? "You may qualify — depends on dependents" : "Income exceeds threshold" },
+    profile.freelance > 0 && { id:"seducation", icon:"📚", nm:"Lifetime Learning Credit", amount: totalIncome < (profile.filing==="mfj"?180000:90000) ? 2000 : 0, eligible: totalIncome < (profile.filing==="mfj"?180000:90000), desc:"Up to $2,000/year for education expenses. Useful for professional development.", eligibleNote: "Requires qualifying education expenses" },
+    { id:"energy", icon:"🔋", nm:"Residential Energy Credit", amount: 0, eligible: true, desc:"30% of costs for solar panels, heat pumps, windows, etc. up to $3,200/year.", eligibleNote:"Applies if you made qualifying home improvements" },
+  ].filter(Boolean);
 
   return (
     <div style={{padding:isMobile?"16px 16px 80px":"24px 28px",overflowY:"auto",height:"100%"}}>
-      <Tabs items={[["harvest","🌾 Loss Harvesting"],["deductions","📋 Deductions"],["wash",`⚠️ Wash Sales${ws.length?` (${ws.length})`:""}`]]} active={sub} onChange={setSub}/>
+      <Tabs items={tabs} active={sub} onChange={setSub}/>
       <div style={{marginTop:14}}>
-        {sub === "harvest" && (!hasPortfolio ? emptyPortfolioState : <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser={<>We found <strong style={{color:C.em}}>${$$(total)}</strong> in potential tax savings across {harvestable.length} positions.</>}>{harvestContent}</ProGate>)}
+
+        {/* ═══ DEDUCTIONS ═══ */}
         {sub === "deductions" && <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser="See personalized deduction strategies modeled at your marginal rate.">
-          <Box style={{marginBottom:14,textAlign:"center",padding:18}}><div style={{color:C.t3,fontSize:12,marginBottom:4}}>Total potential savings</div><div style={{color:C.em,fontSize:34,fontWeight:700,fontFamily:fm}}>${$$(strategies.reduce((s,st)=>s+st.save,0))}</div></Box>
-          {strategies.filter(s=>s.save>0).map(s=>(<Box key={s.id} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between"}}><div><div style={{color:C.t1,fontSize:13,fontWeight:600}}>{s.nm}</div><div style={{color:C.t3,fontSize:12,marginTop:3}}>{s.desc}</div></div><div style={{textAlign:"right"}}><div style={{color:C.em,fontSize:18,fontWeight:700,fontFamily:fm}}>${$$(s.save)}</div></div></div></Box>))}
+          {/* Summary */}
+          <Box style={{marginBottom:14,textAlign:"center",padding:20}}>
+            <div style={{color:C.t3,fontSize:12,marginBottom:4}}>Potential additional tax savings at your <strong style={{color:C.bl,fontFamily:fm}}>{pct(rate)}</strong> marginal rate</div>
+            <div style={{color:C.em,fontSize:38,fontWeight:700,fontFamily:fm}}>${$$(totalNewSavings)}</div>
+            <div style={{color:C.t4,fontSize:11.5,marginTop:4}}>Adjust sliders below to model different contribution levels</div>
+          </Box>
+
+          {/* Strategy cards */}
+          {strategies.map(s => (
+            <Box key={s.id} style={{marginBottom:8,borderLeft:`3px solid ${s.eligible ? (s.save > 0 ? C.em : C.t4) : C.rd+"60"}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    <span style={{fontSize:16}}>{s.icon}</span>
+                    <span style={{color:C.t1,fontSize:13,fontWeight:600}}>{s.nm}</span>
+                    {s.auto && <Chip color={C.bl}>AUTO</Chip>}
+                  </div>
+                  <div style={{color:C.t3,fontSize:12,lineHeight:1.5,marginBottom:6}}>{s.desc}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:s.setSim?8:0}}>
+                    <div style={{width:6,height:6,borderRadius:3,background:s.eligible?C.em:C.rd,flexShrink:0}}/>
+                    <span style={{color:s.eligible?C.t3:C.rd,fontSize:11}}>{s.eligibleNote}</span>
+                  </div>
+                </div>
+                <div style={{textAlign:"right",minWidth:70,flexShrink:0}}>
+                  {s.save > 0 ? <div style={{color:C.em,fontSize:18,fontWeight:700,fontFamily:fm}}>${$$(s.save)}</div>
+                  : <div style={{color:C.t4,fontSize:13,fontFamily:fm}}>$0</div>}
+                  <div style={{color:C.t4,fontSize:10}}>tax saved</div>
+                </div>
+              </div>
+
+              {/* Interactive slider for adjustable strategies */}
+              {s.setSim && s.eligible && <>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginTop:4}}>
+                  <div style={{flex:1}}>
+                    <div style={{height:6,background:C.s3,borderRadius:3,overflow:"hidden",position:"relative"}}>
+                      {/* Current contribution marker */}
+                      {s.current > 0 && <div style={{position:"absolute",top:-1,left:`${(s.current/s.max)*100}%`,width:2,height:8,background:C.t4,borderRadius:1,zIndex:1}}/>}
+                      <div style={{height:"100%",width:`${(s.sim/s.max)*100}%`,background:`linear-gradient(90deg, ${C.em}, ${C.bl})`,borderRadius:3,transition:"width 0.15s"}}/>
+                    </div>
+                    <input type="range" min={0} max={s.max} step={s.max > 10000 ? 500 : 250} value={s.sim} onChange={e => s.setSim(+e.target.value)} style={{width:"100%",accentColor:C.em,height:24,marginTop:-14,opacity:0,cursor:"pointer",position:"relative",zIndex:2}}/>
+                  </div>
+                  <div style={{minWidth:72,textAlign:"right"}}>
+                    <span style={{color:C.t1,fontSize:12,fontWeight:600,fontFamily:fm}}>${$$(s.sim)}</span>
+                    <span style={{color:C.t4,fontSize:10}}> / ${$$(s.max)}</span>
+                  </div>
+                </div>
+              </>}
+
+              {/* Expandable detail */}
+              <div style={{color:C.t4,fontSize:11,lineHeight:1.5,marginTop:6,paddingTop:6,borderTop:`1px solid ${C.bd}`}}>{s.detail}</div>
+            </Box>
+          ))}
+
+          {/* SALT note */}
+          <Box style={{marginTop:10,borderLeft:`3px solid ${C.yl}`}}>
+            <div style={{display:"flex",gap:10}}>
+              <span style={{fontSize:16}}>🧂</span>
+              <div>
+                <div style={{color:C.t1,fontSize:13,fontWeight:600}}>SALT Deduction Cap</div>
+                <div style={{color:C.t3,fontSize:12,lineHeight:1.5,marginTop:3}}>
+                  State and local taxes are capped at $10,000 for federal deductions. Your {ST[profile.state]?.n} tax of ${$$(stTax.tax)} {stTax.tax > SALT_CAP ? `exceeds the cap — you lose $${$$(stTax.tax - SALT_CAP)} in potential deductions.` : `is within the $10,000 cap.`}
+                </div>
+              </div>
+            </div>
+          </Box>
         </ProGate>}
-        {sub === "wash" && (!hasPortfolio ? emptyPortfolioState : <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser={ws.length>0?`${ws.length} potential wash sale${ws.length>1?"s":""} detected.`:"Check your crypto positions for wash sale violations."}>
+
+        {/* ═══ HARVESTING (only when portfolio) ═══ */}
+        {sub === "harvest" && <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser={<>We found <strong style={{color:C.em}}>${$$(harvestTotal)}</strong> in potential tax savings across {harvestable.length} positions.</>}>
+          <Box style={{marginBottom:14,textAlign:"center",padding:20}}><div style={{color:C.t3,fontSize:12,marginBottom:4}}>Potential tax savings at your {pct(rate)} marginal rate</div><div style={{color:C.em,fontSize:38,fontWeight:700,fontFamily:fm}}>${$$(harvestTotal)}</div><div style={{color:C.t3,fontSize:11.5,marginTop:4}}>{harvestable.length} positions with unrealized losses</div></Box>
+          {harvestable.map((h,i)=>(<Box key={i} style={{marginBottom:5,padding:13,borderLeft:`3px solid ${h.type==="crypto"?C.em:C.bl}`}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{color:C.t1,fontSize:13,fontWeight:700}}>{h.asset}</span><Chip color={h.type==="crypto"?C.em:C.bl}>{h.type==="crypto"?"CRYPTO":"STOCK"}</Chip><Chip color={h.holdDays>365?C.bl:C.yl}>{h.holdDays>365?"LT":"ST"}</Chip></div><div style={{textAlign:"right"}}><div style={{color:C.rd,fontSize:11,fontFamily:fm}}>-${$$(Math.abs(h.unrealized))}</div><div style={{color:C.em,fontSize:14,fontWeight:700,fontFamily:fm}}>Save ${$$(h.save)}</div></div></div></Box>))}
+        </ProGate>}
+
+        {/* ═══ WASH SALES (only when portfolio) ═══ */}
+        {sub === "wash" && <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser={ws.length>0?`${ws.length} potential wash sale${ws.length>1?"s":""} detected.`:"Check your crypto positions for wash sale violations."}>
           {ws.length===0?<Box style={{textAlign:"center",padding:36}}><div style={{fontSize:26,marginBottom:6}}>✅</div><div style={{color:C.em,fontSize:14,fontWeight:600}}>No wash sales detected</div></Box>
           :ws.map((w,i)=>(<Box key={i} style={{marginBottom:8,borderLeft:`3px solid ${C.rd}`}}><div style={{display:"flex",justifyContent:"space-between"}}><div><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{color:C.t1,fontSize:13,fontWeight:600}}>{w.asset}</div><Chip color={C.rd}>WASH SALE</Chip></div><div style={{color:C.t3,fontSize:12,marginTop:5}}>Sold {w.sellDate} at ${$$(Math.abs(w.gain))} loss → repurchased {Math.abs(Math.floor((new Date(w.repurchase.d)-new Date(w.sellDate))/864e5))}d later</div></div><div style={{color:C.rd,fontSize:18,fontWeight:700,fontFamily:fm}}>${$$(w.disallowed)}</div></div></Box>))}
         </ProGate>}
+
+        {/* ═══ RETIREMENT ═══ */}
+        {sub === "retirement" && <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser="See how your retirement contributions compound and reduce taxes over time.">
+          <Box style={{marginBottom:14,textAlign:"center",padding:22}}>
+            <div style={{color:C.t3,fontSize:12,marginBottom:4}}>Annual retirement contributions</div>
+            <div style={{color:C.t1,fontSize:36,fontWeight:700,fontFamily:fm}}>${$$(totalAnnualRetirement)}</div>
+            <div style={{display:"flex",gap:16,justifyContent:"center",marginTop:10,flexWrap:"wrap"}}>
+              {annual401k>0&&<span style={{color:C.t3,fontSize:12}}>401(k) <strong style={{color:C.bl,fontFamily:fm}}>${$$(annual401k)}</strong></span>}
+              {annualIRA>0&&<span style={{color:C.t3,fontSize:12}}>IRA <strong style={{color:C.pu,fontFamily:fm}}>${$$(annualIRA)}</strong></span>}
+              {annualHSA>0&&<span style={{color:C.t3,fontSize:12}}>HSA <strong style={{color:C.em,fontFamily:fm}}>${$$(annualHSA)}</strong></span>}
+              {totalAnnualRetirement===0&&<span style={{color:C.t4,fontSize:12}}>Adjust contributions in the Deductions tab</span>}
+            </div>
+          </Box>
+
+          {totalAnnualRetirement > 0 && <>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+              <Box style={{textAlign:"center",padding:16}}>
+                <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Tax saved / year</div>
+                <div style={{color:C.em,fontSize:22,fontWeight:700,fontFamily:fm}}>${$$(taxSavedAnnually)}</div>
+              </Box>
+              <Box style={{textAlign:"center",padding:16}}>
+                <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Tax saved over {yearsToRetire}yr</div>
+                <div style={{color:C.em,fontSize:22,fontWeight:700,fontFamily:fm}}>${$$(taxSaved30yr)}</div>
+              </Box>
+              <Box style={{textAlign:"center",padding:16}}>
+                <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Projected at 7%</div>
+                <div style={{color:C.bl,fontSize:22,fontWeight:700,fontFamily:fm}}>${$$(futureValue)}</div>
+              </Box>
+            </div>
+
+            {/* Growth visualization */}
+            <Box style={{marginBottom:10}}>
+              <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginBottom:10}}>Growth projection (7% avg return)</div>
+              <div style={{display:"flex",alignItems:"flex-end",gap:2,height:120}}>
+                {[5,10,15,20,25,30].filter(y=>y<=yearsToRetire).map(yr => {
+                  const fv = Math.round(totalAnnualRetirement * ((Math.pow(1.07, yr) - 1) / 0.07));
+                  const contributed = totalAnnualRetirement * yr;
+                  const maxFv = Math.round(totalAnnualRetirement * ((Math.pow(1.07, yearsToRetire) - 1) / 0.07));
+                  const barH = maxFv > 0 ? Math.max((fv / maxFv) * 100, 8) : 8;
+                  const contribH = maxFv > 0 ? Math.max((contributed / maxFv) * 100, 4) : 4;
+                  return (
+                    <div key={yr} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                      <span style={{color:C.t1,fontSize:9,fontFamily:fm,fontWeight:600}}>${$$(fv)}</span>
+                      <div style={{width:"100%",position:"relative",height:`${barH}%`,minHeight:8}}>
+                        <div style={{position:"absolute",bottom:0,width:"100%",height:"100%",background:`${C.bl}30`,borderRadius:3}}/>
+                        <div style={{position:"absolute",bottom:0,width:"100%",height:`${contribH/barH*100}%`,background:C.em,borderRadius:"0 0 3px 3px"}}/>
+                      </div>
+                      <span style={{color:C.t4,fontSize:9}}>{yr}yr</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{display:"flex",gap:14,marginTop:8}}>
+                <span style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:C.t3}}><div style={{width:8,height:8,borderRadius:1,background:C.em}}/> Contributed</span>
+                <span style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:C.t3}}><div style={{width:8,height:8,borderRadius:1,background:`${C.bl}30`}}/> Growth</span>
+              </div>
+            </Box>
+          </>}
+
+          {totalAnnualRetirement === 0 && <Box style={{textAlign:"center",padding:32}}>
+            <div style={{fontSize:28,marginBottom:8}}>🏦</div>
+            <div style={{color:C.t1,fontSize:14,fontWeight:600,marginBottom:6}}>No retirement contributions yet</div>
+            <div style={{color:C.t4,fontSize:12,lineHeight:1.5,maxWidth:340,margin:"0 auto"}}>Go to the Deductions tab and adjust your 401(k), IRA, and HSA sliders to see how contributions compound and reduce your taxes.</div>
+          </Box>}
+
+          <Box style={{marginTop:10,borderLeft:`3px solid ${C.bl}`}}>
+            <div style={{display:"flex",gap:10}}>
+              <span style={{fontSize:16}}>💡</span>
+              <div style={{color:C.t3,fontSize:12,lineHeight:1.5}}>
+                <strong style={{color:C.t1}}>Roth vs Traditional:</strong> Traditional contributions save taxes now at your {pct(rate)} rate. Roth contributions are taxed now but grow and withdraw tax-free. If you expect to be in a higher bracket in retirement, Roth may be better.
+              </div>
+            </div>
+          </Box>
+        </ProGate>}
+
+        {/* ═══ CREDITS ═══ */}
+        {sub === "credits" && <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser="See which tax credits you may be eligible for — credits reduce your tax bill dollar-for-dollar.">
+          <Box style={{marginBottom:14,padding:18,textAlign:"center"}}>
+            <div style={{color:C.t3,fontSize:12,marginBottom:4}}>Tax credits reduce your bill <strong style={{color:C.em}}>dollar-for-dollar</strong> — more powerful than deductions</div>
+          </Box>
+
+          {credits.map(cr => (
+            <Box key={cr.id} style={{marginBottom:8,borderLeft:`3px solid ${cr.eligible ? (cr.amount > 0 ? C.em : C.bl) : C.t4}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    <span style={{fontSize:16}}>{cr.icon}</span>
+                    <span style={{color:C.t1,fontSize:13,fontWeight:600}}>{cr.nm}</span>
+                  </div>
+                  <div style={{color:C.t3,fontSize:12,lineHeight:1.5,marginBottom:4}}>{cr.desc}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:5}}>
+                    <div style={{width:6,height:6,borderRadius:3,background:cr.eligible?C.em:C.t4,flexShrink:0}}/>
+                    <span style={{color:cr.eligible?C.t3:C.t4,fontSize:11}}>{cr.eligibleNote}</span>
+                  </div>
+                </div>
+                <div style={{textAlign:"right",minWidth:60,flexShrink:0}}>
+                  {cr.amount > 0
+                    ? <div style={{color:C.em,fontSize:18,fontWeight:700,fontFamily:fm}}>${$$(cr.amount)}</div>
+                    : <div style={{color:C.t4,fontSize:12,fontFamily:fm}}>—</div>}
+                </div>
+              </div>
+            </Box>
+          ))}
+
+          <Box style={{marginTop:10,borderLeft:`3px solid ${C.pu}`}}>
+            <div style={{display:"flex",gap:10}}>
+              <span style={{fontSize:16}}>📌</span>
+              <div style={{color:C.t3,fontSize:12,lineHeight:1.5}}>
+                <strong style={{color:C.t1}}>Credits vs Deductions:</strong> A $1,000 deduction at your {pct(rate)} rate saves you ${$$(Math.round(1000*rate))}. A $1,000 credit saves you the full $1,000. Always claim credits first.
+              </div>
+            </div>
+          </Box>
+        </ProGate>}
+
       </div>
     </div>
   );
@@ -492,8 +876,9 @@ function PlanAhead({ data, profile, isPro, onUpgrade, isMobile }) {
   const [projState, setProjState] = useState(profile.state);
   const [strategy, setStrategy] = useState("hold");
   const totalIncome = profile.salary + (isPro ? profile.freelance + profile.rentalNet : 0);
-  const curSt = calcSt(profile.state, totalIncome, 75000);
-  const tarSt = calcSt(target, totalIncome, 75000);
+  const realGains = Math.max(data.ltGains + data.stGains, 0);
+  const curSt = calcSt(profile.state, totalIncome, realGains);
+  const tarSt = calcSt(target, totalIncome, realGains);
 
   const proj = useMemo(() => {
     let pv = tv;
