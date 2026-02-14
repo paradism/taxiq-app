@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 
 /*
- * TaxIQ v12 — Freemium with onboarding flow
- * New: Guided 4-step onboarding, persistent profiles, zero-default start
+ * TaxIQ v12 — Freemium with onboarding + clean empty states
+ * New: Guided onboarding, persistent profiles, no fake portfolio data
+ * Portfolio features activate when user imports real transactions
  * Free: basic calc, state lookup, 3 AI Q/mo, view-only compliance
  * Pro ($79/yr): full platform, all features unlocked
  */
@@ -237,17 +238,8 @@ const ASSETS = {
   BTC:{name:"Bitcoin",type:"crypto",price:98450},ETH:{name:"Ethereum",type:"crypto",price:3920},
   SOL:{name:"Solana",type:"crypto",price:195},
 };
-const TRANSACTIONS = [
-  {d:"2023-03-15",t:"buy",a:"AAPL",amt:50,p:152,f:0},{d:"2023-06-20",t:"buy",a:"VOO",amt:20,p:395,f:0},
-  {d:"2024-01-10",t:"buy",a:"NVDA",amt:30,p:485,f:0},{d:"2024-08-15",t:"sell",a:"AAPL",amt:20,p:225,f:0},
-  {d:"2024-11-05",t:"buy",a:"MSFT",amt:15,p:410,f:0},{d:"2025-02-10",t:"sell",a:"NVDA",amt:10,p:780,f:0},
-  {d:"2024-01-15",t:"buy",a:"BTC",amt:.5,p:42800,f:12.5},{d:"2024-03-20",t:"buy",a:"ETH",amt:5,p:3450,f:8.75},
-  {d:"2024-06-10",t:"sell",a:"BTC",amt:.2,p:67500,f:15},{d:"2024-09-05",t:"buy",a:"SOL",amt:40,p:135,f:5},
-  {d:"2024-09-20",t:"buy",a:"BTC",amt:.3,p:57200,f:10},{d:"2024-11-28",t:"sell",a:"ETH",amt:3,p:3680,f:9.5},
-  {d:"2025-01-10",t:"sell",a:"BTC",amt:.4,p:94200,f:20},{d:"2025-01-12",t:"buy",a:"BTC",amt:.15,p:93800,f:8},
-  {d:"2025-03-15",t:"buy",a:"ETH",amt:8,p:2850,f:11},{d:"2025-06-01",t:"sell",a:"SOL",amt:20,p:178,f:7},
-  {d:"2025-09-10",t:"sell",a:"ETH",amt:4,p:3100,f:12},{d:"2025-09-15",t:"buy",a:"ETH",amt:3,p:3050,f:6},
-];
+// Transactions start empty — populated when user imports CSV or adds holdings
+const TRANSACTIONS = [];
 function usePortfolio(costMethod = "fifo") {
   return useMemo(() => {
     const h = {}, rl = [], ws = [], sorted = [...TRANSACTIONS].sort((a,b) => a.d.localeCompare(b.d));
@@ -353,6 +345,7 @@ function ProfileModal({ profile, setProfile, onClose, isPro, onUpgrade }) {
 // ═══════════════════════════════════════════
 function Dashboard({ data, go, profile, isPro, onUpgrade }) {
   const { pf, ws, tv, netLT, netST, upl } = data;
+  const hasPortfolio = Object.keys(pf).length > 0;
   const totalIncome = profile.salary + (isPro ? profile.freelance + profile.rentalNet + profile.dividends : 0);
   const absDed = isPro ? profile.retirement401k + profile.retirementIRA + profile.charitable + profile.homeOffice : 0;
   const adjInc = Math.max(totalIncome - absDed, 0);
@@ -361,7 +354,7 @@ function Dashboard({ data, go, profile, isPro, onUpgrade }) {
   const fed = calcFed(adjInc, lt, st, profile.filing, stTax.tax);
   const seTax = isPro ? Math.round(profile.freelance*0.9235*0.153) : 0;
   const totalTax = fed.tot + stTax.tax + seTax;
-  const hSave = Object.values(pf).flatMap(d=>d.lots.filter(l=>l.unrealized<0)).reduce((s,l)=>s+Math.abs(l.unrealized),0)*fed.marg;
+  const hSave = hasPortfolio ? Object.values(pf).flatMap(d=>d.lots.filter(l=>l.unrealized<0)).reduce((s,l)=>s+Math.abs(l.unrealized),0)*fed.marg : 0;
   const risk = Math.min(Math.max(12+Object.keys(pf).length*3+ws.length*10+(tv>200000?10:0)+(profile.foreign?12:0)+(profile.freelance>50000?8:0),0),100);
   const rCol = risk>=55?C.rd:risk>=30?C.yl:C.em;
   const deadlines = [{d:"2026-04-15",nm:"Federal Return + FBAR"},{d:"2026-06-15",nm:"Q2 Est. Tax Payment"},{d:"2026-09-15",nm:"Q3 Est. Tax Payment"}].map(dl=>({...dl,days:Math.ceil((new Date(dl.d)-new Date())/864e5)}));
@@ -381,26 +374,40 @@ function Dashboard({ data, go, profile, isPro, onUpgrade }) {
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(112px,1fr))",gap:7,marginBottom:14}}>
-        {[["Portfolio",`$${$$(tv)}`,C.t1],["Unrealized",`${upl>=0?"+":"-"}$${$$(upl)}`,upl>=0?C.em:C.rd],["LT Gains",`$${$$(data.ltGains)}`,C.em],["ST Gains",`$${$$(data.stGains)}`,C.yl],["Harvestable",isPro?`$${$$(hSave)}`:"🔒",isPro?C.em:C.t4],["Eff. Rate",pct(totalTax/(totalIncome+lt+st||1)),C.bl]].map(([l,v,c],i)=>(
-          <Box key={i} style={{padding:11}} onClick={!isPro&&i===4?onUpgrade:undefined}><div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:2}}>{l}</div><div style={{color:c,fontSize:15,fontWeight:700,fontFamily:fm}}>{v}</div></Box>
+        {[
+          ["Marginal Rate",pct(fed.marg),C.bl],
+          ["Eff. Rate",pct(totalTax/(totalIncome+lt+st||1)),C.bl],
+          ["Std Deduction",`$${$$(fed.ded)}`,C.em],
+          hasPortfolio&&["Portfolio",`$${$$(tv)}`,C.t1],
+          hasPortfolio&&["LT Gains",`$${$$(data.ltGains)}`,C.em],
+          hasPortfolio&&["Harvestable",isPro?`$${$$(hSave)}`:"🔒",isPro?C.em:C.t4],
+        ].filter(Boolean).map(([l,v,c],i)=>(
+          <Box key={i} style={{padding:11}} onClick={!isPro&&l==="Harvestable"?onUpgrade:undefined}><div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:2}}>{l}</div><div style={{color:c,fontSize:15,fontWeight:700,fontFamily:fm}}>{v}</div></Box>
         ))}
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <div>
-          {/* Insights — free users see teaser */}
+          {/* Insights */}
           {[
-            hSave>200&&{icon:"🌾",t:`Save ~$${$$(hSave)} by harvesting losses`,d:isPro?"Unrealized losses across stocks and crypto.":"Upgrade to see which positions to harvest.",tab:"save",col:C.em,pro:true},
-            ws.length>0&&{icon:"⚠️",t:`${ws.length} crypto wash sale${ws.length>1?"s":""} detected`,d:isPro?`$${$$(ws.reduce((s,w)=>s+w.disallowed,0))} in deductions at risk.`:"Upgrade to see details.",tab:"save",col:C.rd,pro:true},
-            stTax.tax>5000&&{icon:"✈️",t:`${ST[profile.state]?.n}: $${$$(stTax.tax)}/yr in state tax`,d:"Compare zero-tax states to see savings.",tab:"plan",col:C.bl,pro:true},
+            hasPortfolio&&hSave>200&&{icon:"🌾",t:`Save ~$${$$(hSave)} by harvesting losses`,d:isPro?"Unrealized losses across stocks and crypto.":"Upgrade to see which positions to harvest.",tab:"save",col:C.em,pro:true},
+            hasPortfolio&&ws.length>0&&{icon:"⚠️",t:`${ws.length} crypto wash sale${ws.length>1?"s":""} detected`,d:isPro?`$${$$(ws.reduce((s,w)=>s+w.disallowed,0))} in deductions at risk.`:"Upgrade to see details.",tab:"save",col:C.rd,pro:true},
+            stTax.tax>5000&&{icon:"✈️",t:`${ST[profile.state]?.n}: $${$$(stTax.tax)}/yr in state tax`,d:"Compare zero-tax states to see savings.",tab:"plan",col:C.bl,pro:false},
             profile.foreign&&{icon:"🌍",t:"Foreign account reporting required",d:"FBAR and FATCA filings may apply.",tab:"comply",col:C.yl,pro:false},
+            fed.marg>=0.32&&{icon:"💡",t:`You're in the ${pct(fed.marg)} bracket`,d:"Deduction strategies could have outsized impact at this rate.",tab:"save",col:C.pu,pro:false},
           ].filter(Boolean).map((ins,i)=>(
             <Box key={i} onClick={()=>ins.pro&&!isPro?onUpgrade():go(ins.tab)} style={{marginBottom:7,borderLeft:`3px solid ${ins.col}`,cursor:"pointer"}}>
               <div style={{display:"flex",gap:10}}><span style={{fontSize:16}}>{ins.icon}</span><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{color:C.t1,fontSize:12.5,fontWeight:600,lineHeight:1.4}}>{ins.t}</span>{ins.pro&&!isPro&&<Chip color={C.em} style={{fontSize:8}}>PRO</Chip>}</div><div style={{color:C.t3,fontSize:11.5,marginTop:2}}>{ins.d}</div></div></div>
             </Box>
           ))}
-          {/* Holdings */}
-          {["stock","etf","crypto"].map(type=>{const items=Object.entries(pf).filter(([,d])=>d.type===type);if(!items.length)return null;return<div key={type}><div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginTop:8,marginBottom:5}}>{type==="etf"?"ETFs":type==="stock"?"Stocks":"Digital Assets"}</div>{items.sort((a,b)=>b[1].value-a[1].value).map(([a,d])=>(<Box key={a} style={{marginBottom:5,padding:11}}><div style={{display:"flex",alignItems:"center"}}><div style={{width:28,height:28,borderRadius:7,background:type==="crypto"?`${C.emx}0.08)`:`${C.bl}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,fontFamily:fm,color:type==="crypto"?C.em:C.bl,marginRight:10}}>{a}</div><div style={{flex:1}}><div style={{color:C.t1,fontSize:12,fontWeight:600}}>{d.name}</div><div style={{color:C.t4,fontSize:10}}>{d.qty<1?d.qty.toFixed(4):d.qty.toFixed(1)} × ${$$(d.price)}</div></div><div style={{textAlign:"right"}}><div style={{color:C.t1,fontSize:12,fontWeight:600,fontFamily:fm}}>${$$(d.value)}</div><span style={{color:d.pl>=0?C.em:C.rd,fontSize:10,fontFamily:fm}}>{d.pct>=0?"+":""}{d.pct.toFixed(1)}%</span></div></div></Box>))}</div>;})}
+          {/* Holdings or empty state */}
+          {hasPortfolio ? ["stock","etf","crypto"].map(type=>{const items=Object.entries(pf).filter(([,d])=>d.type===type);if(!items.length)return null;return<div key={type}><div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginTop:8,marginBottom:5}}>{type==="etf"?"ETFs":type==="stock"?"Stocks":"Digital Assets"}</div>{items.sort((a,b)=>b[1].value-a[1].value).map(([a,d])=>(<Box key={a} style={{marginBottom:5,padding:11}}><div style={{display:"flex",alignItems:"center"}}><div style={{width:28,height:28,borderRadius:7,background:type==="crypto"?`${C.emx}0.08)`:`${C.bl}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,fontFamily:fm,color:type==="crypto"?C.em:C.bl,marginRight:10}}>{a}</div><div style={{flex:1}}><div style={{color:C.t1,fontSize:12,fontWeight:600}}>{d.name}</div><div style={{color:C.t4,fontSize:10}}>{d.qty<1?d.qty.toFixed(4):d.qty.toFixed(1)} × ${$$(d.price)}</div></div><div style={{textAlign:"right"}}><div style={{color:C.t1,fontSize:12,fontWeight:600,fontFamily:fm}}>${$$(d.value)}</div><span style={{color:d.pl>=0?C.em:C.rd,fontSize:10,fontFamily:fm}}>{d.pct>=0?"+":""}{d.pct.toFixed(1)}%</span></div></div></Box>))}</div>;})
+          : <Box style={{marginTop:8,padding:22,textAlign:"center",border:`1px dashed ${C.bd}`}}>
+            <div style={{fontSize:28,marginBottom:8}}>📊</div>
+            <div style={{color:C.t1,fontSize:13,fontWeight:600,marginBottom:4}}>Add your investments</div>
+            <div style={{color:C.t4,fontSize:12,lineHeight:1.5,marginBottom:12}}>Import your brokerage or exchange transactions to see portfolio value, capital gains, loss harvesting opportunities, and wash sale detection.</div>
+            <Chip color={C.t4}>CSV import coming soon</Chip>
+          </Box>}
         </div>
         <div>
           <Box style={{marginBottom:10}}>
@@ -423,11 +430,12 @@ function Dashboard({ data, go, profile, isPro, onUpgrade }) {
 // ═══════════════════════════════════════════
 function SaveMoney({ data, profile, isPro, onUpgrade }) {
   const { pf, ws } = data;
-  const [sub, setSub] = useState("harvest");
+  const hasPortfolio = Object.keys(pf).length > 0;
+  const [sub, setSub] = useState("deductions");
   const stTax = calcSt(profile.state, profile.salary+profile.freelance, 0);
   const fed = calcFed(profile.salary+profile.freelance, 0, 0, profile.filing, stTax.tax);
   const rate = fed.marg;
-  const harvestable = Object.entries(pf).flatMap(([a,d]) => d.lots.filter(l=>l.unrealized<0).map(l=>({asset:a,type:d.type,name:d.name,...l,save:Math.abs(l.unrealized)*rate}))).sort((a,b)=>a.unrealized-b.unrealized);
+  const harvestable = hasPortfolio ? Object.entries(pf).flatMap(([a,d]) => d.lots.filter(l=>l.unrealized<0).map(l=>({asset:a,type:d.type,name:d.name,...l,save:Math.abs(l.unrealized)*rate}))).sort((a,b)=>a.unrealized-b.unrealized) : [];
   const total = harvestable.reduce((s,h) => s+h.save, 0);
   const strategies = [
     {id:"401k",nm:"Max 401(k)",desc:"Contribute full $23,000",current:profile.retirement401k,save:Math.round(Math.max(23000-profile.retirement401k,0)*rate)},
@@ -435,6 +443,13 @@ function SaveMoney({ data, profile, isPro, onUpgrade }) {
     {id:"hsa",nm:"HSA",desc:"$4,150 triple-tax-advantaged",current:0,save:Math.round(4150*rate)},
     profile.freelance>0&&{id:"qbi",nm:"QBI Deduction",desc:"20% of qualified business income",current:0,save:Math.round(profile.freelance*0.2*rate)},
   ].filter(Boolean);
+
+  const emptyPortfolioState = <Box style={{padding:28,textAlign:"center",border:`1px dashed ${C.bd}`}}>
+    <div style={{fontSize:28,marginBottom:8}}>📊</div>
+    <div style={{color:C.t1,fontSize:13,fontWeight:600,marginBottom:4}}>No investment data yet</div>
+    <div style={{color:C.t4,fontSize:12,lineHeight:1.5,marginBottom:10}}>Import your brokerage transactions to unlock tax-loss harvesting analysis and wash sale detection.</div>
+    <Chip color={C.t4}>CSV import coming soon</Chip>
+  </Box>;
 
   const harvestContent = <>
     <Box style={{marginBottom:14,textAlign:"center",padding:20}}><div style={{color:C.t3,fontSize:12,marginBottom:4}}>Potential tax savings at your {pct(rate)} marginal rate</div><div style={{color:C.em,fontSize:38,fontWeight:700,fontFamily:fm}}>${$$(total)}</div><div style={{color:C.t3,fontSize:11.5,marginTop:4}}>{harvestable.length} positions with unrealized losses</div></Box>
@@ -445,12 +460,12 @@ function SaveMoney({ data, profile, isPro, onUpgrade }) {
     <div style={{padding:"24px 28px",overflowY:"auto",height:"100%"}}>
       <Tabs items={[["harvest","🌾 Loss Harvesting"],["deductions","📋 Deductions"],["wash",`⚠️ Wash Sales${ws.length?` (${ws.length})`:""}`]]} active={sub} onChange={setSub}/>
       <div style={{marginTop:14}}>
-        {sub === "harvest" && <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser={<>We found <strong style={{color:C.em}}>${$$(total)}</strong> in potential tax savings across {harvestable.length} positions.</>}>{harvestContent}</ProGate>}
+        {sub === "harvest" && (!hasPortfolio ? emptyPortfolioState : <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser={<>We found <strong style={{color:C.em}}>${$$(total)}</strong> in potential tax savings across {harvestable.length} positions.</>}>{harvestContent}</ProGate>)}
         {sub === "deductions" && <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser="See personalized deduction strategies modeled at your marginal rate.">
           <Box style={{marginBottom:14,textAlign:"center",padding:18}}><div style={{color:C.t3,fontSize:12,marginBottom:4}}>Total potential savings</div><div style={{color:C.em,fontSize:34,fontWeight:700,fontFamily:fm}}>${$$(strategies.reduce((s,st)=>s+st.save,0))}</div></Box>
           {strategies.filter(s=>s.save>0).map(s=>(<Box key={s.id} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between"}}><div><div style={{color:C.t1,fontSize:13,fontWeight:600}}>{s.nm}</div><div style={{color:C.t3,fontSize:12,marginTop:3}}>{s.desc}</div></div><div style={{textAlign:"right"}}><div style={{color:C.em,fontSize:18,fontWeight:700,fontFamily:fm}}>${$$(s.save)}</div></div></div></Box>))}
         </ProGate>}
-        {sub === "wash" && <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser={ws.length>0?`${ws.length} potential wash sale${ws.length>1?"s":""} detected.`:"Check your crypto positions for wash sale violations."}>
+        {sub === "wash" && (!hasPortfolio ? emptyPortfolioState : <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser={ws.length>0?`${ws.length} potential wash sale${ws.length>1?"s":""} detected.`:"Check your crypto positions for wash sale violations."}>
           {ws.length===0?<Box style={{textAlign:"center",padding:36}}><div style={{fontSize:26,marginBottom:6}}>✅</div><div style={{color:C.em,fontSize:14,fontWeight:600}}>No wash sales detected</div></Box>
           :ws.map((w,i)=>(<Box key={i} style={{marginBottom:8,borderLeft:`3px solid ${C.rd}`}}><div style={{display:"flex",justifyContent:"space-between"}}><div><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{color:C.t1,fontSize:13,fontWeight:600}}>{w.asset}</div><Chip color={C.rd}>WASH SALE</Chip></div><div style={{color:C.t3,fontSize:12,marginTop:5}}>Sold {w.sellDate} at ${$$(Math.abs(w.gain))} loss → repurchased {Math.abs(Math.floor((new Date(w.repurchase.d)-new Date(w.sellDate))/864e5))}d later</div></div><div style={{color:C.rd,fontSize:18,fontWeight:700,fontFamily:fm}}>${$$(w.disallowed)}</div></div></Box>))}
         </ProGate>}
@@ -914,7 +929,7 @@ export default function TaxIQ() {
           ))}
         </div>
         {sbOpen&&<div style={{padding:"8px 14px",borderTop:`1px solid ${C.bd}`,fontSize:10.5}}>
-          <Row l="Net Worth" r={`$${$$(data.tv)}`} color={C.em}/><Row l="State" r={ST[profile.state]?.n||""} color={C.t3} sub/>
+          <Row l="Income" r={`$${$$(profile.salary+(isPro?profile.freelance+profile.rentalNet+profile.dividends:0))}`} color={C.em}/><Row l="State" r={ST[profile.state]?.n||""} color={C.t3} sub/>
           <div style={{display:"flex",gap:4,marginTop:6}}>
             <button onClick={()=>setShowProfile(true)} style={{flex:1,padding:"6px",borderRadius:6,border:`1px solid ${C.bd}`,background:"transparent",color:C.t3,cursor:"pointer",fontSize:10,fontFamily:ff}}>✏️ Profile</button>
             {isPro?<select value={costMethod} onChange={e=>setCostMethod(e.target.value)} style={{flex:1,padding:"6px",borderRadius:6,border:`1px solid ${C.bd}`,background:"transparent",color:C.t3,fontSize:10,fontFamily:ff}}><option value="fifo">FIFO</option><option value="lifo">LIFO</option><option value="hifo">HIFO</option></select>
