@@ -19,6 +19,11 @@ const ff = "'Outfit', sans-serif";
 const fm = "'JetBrains Mono', monospace";
 const $$ = n => Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 const pct = n => (n * 100).toFixed(1) + "%";
+function useIsMobile(bp = 768) {
+  const [m, setM] = useState(typeof window !== "undefined" ? window.innerWidth < bp : false);
+  useEffect(() => { const h = () => setM(window.innerWidth < bp); window.addEventListener("resize", h); return () => window.removeEventListener("resize", h); }, [bp]);
+  return m;
+}
 
 // ═══════════════════════════════════════════
 // STRIPE CONFIG — Replace with your real IDs
@@ -91,7 +96,7 @@ function ProBadge({ isPro }) {
 // ═══════════════════════════════════════════
 // UPGRADE MODAL
 // ═══════════════════════════════════════════
-function UpgradeModal({ onClose, onUpgrade, onRestore }) {
+function UpgradeModal({ onClose, onUpgrade, onRestore, isMobile }) {
   const features = [
     ["⚡", "Unlimited income sources", "W-2, freelance, rental, dividends — all at once"],
     ["🌾", "Tax-loss harvesting scanner", "Find every harvestable position across stocks and crypto"],
@@ -103,12 +108,13 @@ function UpgradeModal({ onClose, onUpgrade, onRestore }) {
     ["📊", "Cost basis methods", "Compare FIFO, LIFO, and HIFO impact"],
   ];
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: isMobile?"flex-end":"center", justifyContent: "center" }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)" }} />
-      <div style={{ position: "relative", background: C.s1, border: `1px solid ${C.bd}`, borderRadius: 18, width: 480, maxHeight: "90vh", overflowY: "auto", zIndex: 201 }}>
+      <div style={{ position: "relative", background: C.s1, border: `1px solid ${C.bd}`, borderRadius: isMobile?"18px 18px 0 0":18, width: isMobile?"100%":480, maxHeight: "90vh", overflowY: "auto", zIndex: 201 }}>
+        {isMobile&&<div style={{width:36,height:4,borderRadius:2,background:C.s4,margin:"10px auto 0"}}/>}
         {/* Header */}
         <div style={{ padding: "28px 28px 0", textAlign: "center" }}>
-          <button onClick={onClose} style={{ position: "absolute", top: 14, right: 14, background: "none", border: "none", color: C.t3, fontSize: 18, cursor: "pointer" }}>✕</button>
+          <button onClick={onClose} style={{ position: "absolute", top: isMobile?18:14, right: 14, background: "none", border: "none", color: C.t3, fontSize: 18, cursor: "pointer", padding:8 }}>✕</button>
           <div style={{ width: 44, height: 44, borderRadius: 12, background: `linear-gradient(135deg, ${C.em}, ${C.emd})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 800, color: C.bg, margin: "0 auto 14px" }}>T</div>
           <div style={{ color: C.t1, fontSize: 22, fontWeight: 700, marginBottom: 4 }}>TaxIQ Pro</div>
           <div style={{ color: C.t3, fontSize: 13.5, marginBottom: 20 }}>The complete tax intelligence platform</div>
@@ -295,22 +301,23 @@ const INTL = [{f:"🇺🇸",n:"United States",lt:"0/15/20%",cr:"Property"},{f:"�
 // ═══════════════════════════════════════════
 // PROFILE EDITOR
 // ═══════════════════════════════════════════
-function ProfileModal({ profile, setProfile, onClose, isPro, onUpgrade }) {
+function ProfileModal({ profile, setProfile, onClose, isPro, onUpgrade, isMobile }) {
   const [p, setP] = useState({...profile});
   const u = (k,v) => setP(prev => ({...prev, [k]:v}));
   const multiIncome = isPro;
   return (
-    <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
+    <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:isMobile?"flex-end":"center",justifyContent:"center"}}>
       <div onClick={onClose} style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}}/>
-      <div style={{position:"relative",background:C.s1,border:`1px solid ${C.bd}`,borderRadius:16,padding:28,width:560,maxHeight:"85vh",overflowY:"auto",zIndex:101}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{color:C.t1,fontSize:18,fontWeight:700}}>Tax Profile</div><button onClick={onClose} style={{background:"none",border:"none",color:C.t3,fontSize:18,cursor:"pointer"}}>✕</button></div>
+      <div style={{position:"relative",background:C.s1,border:`1px solid ${C.bd}`,borderRadius:isMobile?"16px 16px 0 0":16,padding:isMobile?20:28,width:isMobile?"100%":560,maxHeight:isMobile?"92vh":"85vh",overflowY:"auto",zIndex:101}}>
+        {isMobile&&<div style={{width:36,height:4,borderRadius:2,background:C.s4,margin:"0 auto 14px"}}/>}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{color:C.t1,fontSize:18,fontWeight:700}}>Tax Profile</div><button onClick={onClose} style={{background:"none",border:"none",color:C.t3,fontSize:18,cursor:"pointer",padding:8}}>✕</button></div>
         <div style={{color:C.em,fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Filing Information</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:20}}>
           <SelectField label="Filing Status" value={p.filing} onChange={v=>u("filing",v)} options={[["single","Single"],["mfj","Married Filing Jointly"],["mfs","Married Filing Separately"],["hoh","Head of Household"]]}/>
           <SelectField label="State" value={p.state} onChange={v=>u("state",v)} options={Object.entries(ST).sort((a,b)=>a[1].n.localeCompare(b[1].n)).map(([k,v])=>[k,`${v.n}${v.t==="0"?" ★":""}`])}/>
         </div>
         <div style={{color:C.em,fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Income Sources</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:20}}>
           <InputField label="W-2 Salary" prefix="$" value={p.salary} onChange={v=>u("salary",v)}/>
           {multiIncome ? <>
             <InputField label="Freelance / 1099" prefix="$" value={p.freelance} onChange={v=>u("freelance",v)}/>
@@ -319,12 +326,12 @@ function ProfileModal({ profile, setProfile, onClose, isPro, onUpgrade }) {
           </> : <div style={{gridColumn:"1/-1",padding:"12px 16px",background:`${C.emx}0.06)`,border:`1px solid ${C.emx}0.12)`,borderRadius:10}}>
             <div style={{color:C.em,fontSize:12,fontWeight:600,marginBottom:4}}>🔒 Multiple income sources require Pro</div>
             <div style={{color:C.t4,fontSize:11.5}}>Add freelance, rental, and dividend income with TaxIQ Pro.</div>
-            <button onClick={onUpgrade} style={{marginTop:8,padding:"6px 14px",borderRadius:7,border:"none",background:C.em,color:C.bg,fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:ff}}>Upgrade — $79/yr</button>
+            <button onClick={onUpgrade} style={{marginTop:8,padding:"8px 14px",borderRadius:7,border:"none",background:C.em,color:C.bg,fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:ff}}>Upgrade — $79/yr</button>
           </div>}
         </div>
         {multiIncome && <>
           <div style={{color:C.em,fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Deductions & Retirement</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:20}}>
             <InputField label="401(k)" prefix="$" value={p.retirement401k} onChange={v=>u("retirement401k",v)}/>
             <InputField label="IRA" prefix="$" value={p.retirementIRA} onChange={v=>u("retirementIRA",v)}/>
             <InputField label="Charitable" prefix="$" value={p.charitable} onChange={v=>u("charitable",v)}/>
@@ -332,8 +339,8 @@ function ProfileModal({ profile, setProfile, onClose, isPro, onUpgrade }) {
           </div>
         </>}
         <div style={{display:"flex",gap:10}}>
-          <button onClick={onClose} style={{flex:1,padding:"11px",borderRadius:10,border:`1px solid ${C.bd}`,background:"transparent",color:C.t2,cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:ff}}>Cancel</button>
-          <button onClick={()=>{setProfile(p);onClose();}} style={{flex:2,padding:"11px",borderRadius:10,border:"none",background:C.em,color:C.bg,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:ff}}>Save & Recalculate</button>
+          <button onClick={onClose} style={{flex:1,padding:"13px",borderRadius:10,border:`1px solid ${C.bd}`,background:"transparent",color:C.t2,cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:ff}}>Cancel</button>
+          <button onClick={()=>{setProfile(p);onClose();}} style={{flex:2,padding:"13px",borderRadius:10,border:"none",background:C.em,color:C.bg,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:ff}}>Save & Recalculate</button>
         </div>
       </div>
     </div>
@@ -343,7 +350,7 @@ function ProfileModal({ profile, setProfile, onClose, isPro, onUpgrade }) {
 // ═══════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════
-function Dashboard({ data, go, profile, isPro, onUpgrade }) {
+function Dashboard({ data, go, profile, isPro, onUpgrade, isMobile }) {
   const { pf, ws, tv, netLT, netST, upl } = data;
   const hasPortfolio = Object.keys(pf).length > 0;
   const totalIncome = profile.salary + (isPro ? profile.freelance + profile.rentalNet + profile.dividends : 0);
@@ -360,20 +367,20 @@ function Dashboard({ data, go, profile, isPro, onUpgrade }) {
   const deadlines = [{d:"2026-04-15",nm:"Federal Return + FBAR"},{d:"2026-06-15",nm:"Q2 Est. Tax Payment"},{d:"2026-09-15",nm:"Q3 Est. Tax Payment"}].map(dl=>({...dl,days:Math.ceil((new Date(dl.d)-new Date())/864e5)}));
 
   return (
-    <div style={{padding:"24px 28px",overflowY:"auto",height:"100%"}}>
-      <div style={{textAlign:"center",padding:"18px 0 12px"}}>
+    <div style={{padding:isMobile?"16px 16px 80px":"24px 28px",overflowY:"auto",height:"100%"}}>
+      <div style={{textAlign:"center",padding:isMobile?"12px 0":"18px 0 12px"}}>
         <div style={{color:C.t3,fontSize:12,marginBottom:4}}>Estimated total tax liability <Chip color={C.bl} style={{marginLeft:6}}>{profile.filing==="mfj"?"MFJ":profile.filing==="mfs"?"MFS":profile.filing==="hoh"?"HOH":"Single"}</Chip></div>
-        <div style={{fontSize:46,fontWeight:700,fontFamily:fm,color:C.t1,letterSpacing:"-0.03em"}}>${$$(totalTax)}</div>
-        <div style={{display:"flex",gap:12,justifyContent:"center",marginTop:6,flexWrap:"wrap"}}>
-          <span style={{color:C.t3,fontSize:12}}>Federal <strong style={{color:C.t1,fontFamily:fm}}>${$$(fed.tot)}</strong></span>
-          <span style={{color:C.t3,fontSize:12}}>{ST[profile.state]?.n} <strong style={{color:stTax.tax>0?C.yl:C.em,fontFamily:fm}}>${$$(stTax.tax)}</strong></span>
-          {seTax>0&&<span style={{color:C.t3,fontSize:12}}>SE <strong style={{color:C.pu,fontFamily:fm}}>${$$(seTax)}</strong></span>}
-          {fed.niit>0&&<span style={{color:C.t3,fontSize:12}}>NIIT <strong style={{color:C.rd,fontFamily:fm}}>${$$(fed.niit)}</strong></span>}
+        <div style={{fontSize:isMobile?36:46,fontWeight:700,fontFamily:fm,color:C.t1,letterSpacing:"-0.03em"}}>${$$(totalTax)}</div>
+        <div style={{display:"flex",gap:isMobile?8:12,justifyContent:"center",marginTop:6,flexWrap:"wrap"}}>
+          <span style={{color:C.t3,fontSize:isMobile?11:12}}>Federal <strong style={{color:C.t1,fontFamily:fm}}>${$$(fed.tot)}</strong></span>
+          <span style={{color:C.t3,fontSize:isMobile?11:12}}>{ST[profile.state]?.n} <strong style={{color:stTax.tax>0?C.yl:C.em,fontFamily:fm}}>${$$(stTax.tax)}</strong></span>
+          {seTax>0&&<span style={{color:C.t3,fontSize:isMobile?11:12}}>SE <strong style={{color:C.pu,fontFamily:fm}}>${$$(seTax)}</strong></span>}
+          {fed.niit>0&&<span style={{color:C.t3,fontSize:isMobile?11:12}}>NIIT <strong style={{color:C.rd,fontFamily:fm}}>${$$(fed.niit)}</strong></span>}
         </div>
-        {!isPro && <div style={{marginTop:10}}><button onClick={onUpgrade} style={{padding:"6px 16px",borderRadius:8,border:`1px solid ${C.emx}0.2)`,background:`${C.emx}0.06)`,color:C.em,fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:ff}}>⚡ Add freelance, rental & dividend income → Upgrade</button></div>}
+        {!isPro && <div style={{marginTop:10}}><button onClick={onUpgrade} style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.emx}0.2)`,background:`${C.emx}0.06)`,color:C.em,fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:ff}}>⚡ Add freelance, rental & dividend income → Upgrade</button></div>}
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(112px,1fr))",gap:7,marginBottom:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(3,1fr)":"repeat(auto-fit,minmax(112px,1fr))",gap:7,marginBottom:14}}>
         {[
           ["Marginal Rate",pct(fed.marg),C.bl],
           ["Eff. Rate",pct(totalTax/(totalIncome+lt+st||1)),C.bl],
@@ -382,11 +389,11 @@ function Dashboard({ data, go, profile, isPro, onUpgrade }) {
           hasPortfolio&&["LT Gains",`$${$$(data.ltGains)}`,C.em],
           hasPortfolio&&["Harvestable",isPro?`$${$$(hSave)}`:"🔒",isPro?C.em:C.t4],
         ].filter(Boolean).map(([l,v,c],i)=>(
-          <Box key={i} style={{padding:11}} onClick={!isPro&&l==="Harvestable"?onUpgrade:undefined}><div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:2}}>{l}</div><div style={{color:c,fontSize:15,fontWeight:700,fontFamily:fm}}>{v}</div></Box>
+          <Box key={i} style={{padding:isMobile?9:11}} onClick={!isPro&&l==="Harvestable"?onUpgrade:undefined}><div style={{color:C.t3,fontSize:isMobile?8.5:9.5,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:2}}>{l}</div><div style={{color:c,fontSize:isMobile?13:15,fontWeight:700,fontFamily:fm}}>{v}</div></Box>
         ))}
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14}}>
         <div>
           {/* Insights */}
           {[
@@ -428,7 +435,7 @@ function Dashboard({ data, go, profile, isPro, onUpgrade }) {
 // ═══════════════════════════════════════════
 // SAVE MONEY (fully gated)
 // ═══════════════════════════════════════════
-function SaveMoney({ data, profile, isPro, onUpgrade }) {
+function SaveMoney({ data, profile, isPro, onUpgrade, isMobile }) {
   const { pf, ws } = data;
   const hasPortfolio = Object.keys(pf).length > 0;
   const [sub, setSub] = useState("deductions");
@@ -457,7 +464,7 @@ function SaveMoney({ data, profile, isPro, onUpgrade }) {
   </>;
 
   return (
-    <div style={{padding:"24px 28px",overflowY:"auto",height:"100%"}}>
+    <div style={{padding:isMobile?"16px 16px 80px":"24px 28px",overflowY:"auto",height:"100%"}}>
       <Tabs items={[["harvest","🌾 Loss Harvesting"],["deductions","📋 Deductions"],["wash",`⚠️ Wash Sales${ws.length?` (${ws.length})`:""}`]]} active={sub} onChange={setSub}/>
       <div style={{marginTop:14}}>
         {sub === "harvest" && (!hasPortfolio ? emptyPortfolioState : <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser={<>We found <strong style={{color:C.em}}>${$$(total)}</strong> in potential tax savings across {harvestable.length} positions.</>}>{harvestContent}</ProGate>)}
@@ -477,7 +484,7 @@ function SaveMoney({ data, profile, isPro, onUpgrade }) {
 // ═══════════════════════════════════════════
 // PLAN AHEAD (gated: comparison free, proj pro)
 // ═══════════════════════════════════════════
-function PlanAhead({ data, profile, isPro, onUpgrade }) {
+function PlanAhead({ data, profile, isPro, onUpgrade, isMobile }) {
   const { tv } = data;
   const [sub, setSub] = useState("states");
   const [target, setTarget] = useState("TX");
@@ -501,11 +508,11 @@ function PlanAhead({ data, profile, isPro, onUpgrade }) {
   }, [tv,growth,totalIncome,projState,strategy,profile.filing,profile.freelance]);
 
   return (
-    <div style={{padding:"24px 28px",overflowY:"auto",height:"100%"}}>
+    <div style={{padding:isMobile?"16px 16px 80px":"24px 28px",overflowY:"auto",height:"100%"}}>
       <Tabs items={[["states","✈️ State Comparison"],["proj","🔮 3-Year Projection"]]} active={sub} onChange={setSub}/>
       {sub === "states" && <div style={{marginTop:14}}>
         {/* State comparison is free — shows value */}
-        <Box style={{marginBottom:14,padding:22,textAlign:"center"}}>
+        <Box style={{marginBottom:14,padding:isMobile?16:22,textAlign:"center"}}>
           <div style={{color:C.t3,fontSize:12.5,marginBottom:8}}>Moving from <strong style={{color:C.t1}}>{ST[profile.state]?.n}</strong> to</div>
           <select value={target} onChange={e=>setTarget(e.target.value)} style={{background:C.s1,border:`1px solid ${C.bd}`,borderRadius:10,padding:"10px 16px",color:C.t1,fontSize:15,fontWeight:600,fontFamily:ff,outline:"none",marginBottom:12}}>{Object.entries(ST).filter(([c])=>c!==profile.state).sort((a,b)=>a[1].n.localeCompare(b[1].n)).map(([k,v])=><option key={k} value={k}>{v.n}{v.t==="0"?" ★":""}</option>)}</select>
           {curSt.tax-tarSt.tax>0?<><div style={{color:C.em,fontSize:40,fontWeight:700,fontFamily:fm}}>${$$(curSt.tax-tarSt.tax)}</div><div style={{color:C.t3,fontSize:12.5,marginTop:4}}>saved per year</div><div style={{display:"flex",justifyContent:"center",gap:24,marginTop:12}}><div><div style={{color:C.rd,fontSize:17,fontWeight:700,fontFamily:fm}}>${$$(curSt.tax)}</div><div style={{color:C.t3,fontSize:10.5}}>{ST[profile.state]?.n}</div></div><span style={{color:C.t4,fontSize:17}}>→</span><div><div style={{color:C.em,fontSize:17,fontWeight:700,fontFamily:fm}}>${$$(tarSt.tax)}</div><div style={{color:C.t3,fontSize:10.5}}>{ST[target]?.n}</div></div></div></>:<div style={{color:C.yl,fontSize:14,fontWeight:600}}>No savings</div>}
@@ -535,7 +542,7 @@ function PlanAhead({ data, profile, isPro, onUpgrade }) {
 // ═══════════════════════════════════════════
 // COMPLIANCE (view-only for free)
 // ═══════════════════════════════════════════
-function Compliance({ isPro, onUpgrade }) {
+function Compliance({ isPro, onUpgrade, isMobile }) {
   const [open, setOpen] = useState(null);
   const [done, setDone] = useState({});
   const [loaded, setLoaded] = useState(false);
@@ -546,7 +553,7 @@ function Compliance({ isPro, onUpgrade }) {
   }, [isPro]);
 
   return (
-    <div style={{padding:"24px 28px",overflowY:"auto",height:"100%"}}>
+    <div style={{padding:isMobile?"16px 16px 80px":"24px 28px",overflowY:"auto",height:"100%"}}>
       <div style={{color:C.t1,fontSize:16,fontWeight:700,marginBottom:4}}>Compliance & Filing</div>
       <div style={{color:C.t3,fontSize:12,marginBottom:16}}>Check which obligations apply. Missing them can mean steep penalties.</div>
       {!isPro && <div style={{padding:"10px 16px",background:`${C.emx}0.06)`,border:`1px solid ${C.emx}0.12)`,borderRadius:10,marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -574,7 +581,7 @@ function Compliance({ isPro, onUpgrade }) {
 // ═══════════════════════════════════════════
 // AI ADVISOR (3 free Q/mo, unlimited Pro)
 // ═══════════════════════════════════════════
-function Ask({ profile, data, isPro, onUpgrade }) {
+function Ask({ profile, data, isPro, onUpgrade, isMobile }) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [ld, setLd] = useState(false);
@@ -609,7 +616,7 @@ function Ask({ profile, data, isPro, onUpgrade }) {
   const atLimit = !isPro && qUsed >= FREE_LIMIT;
 
   return (
-    <div style={{height:"100%",display:"flex",flexDirection:"column",padding:"0 28px"}}>
+    <div style={{height:"100%",display:"flex",flexDirection:"column",padding:isMobile?"0 16px":"0 28px"}}>
       <div style={{padding:"14px 0",display:"flex",gap:6,alignItems:"center"}}>
         <Tabs items={[["r","🔍 Research"],["a","⚖️ Advice"]]} active={mode} onChange={m=>{setMode(m);setMsgs([]);}}/>
         {!isPro && <span style={{marginLeft:"auto",color:C.t4,fontSize:11,fontFamily:fm}}>{Math.max(FREE_LIMIT-qUsed,0)}/{FREE_LIMIT} free</span>}
@@ -638,6 +645,7 @@ function Ask({ profile, data, isPro, onUpgrade }) {
 // ONBOARDING WIZARD
 // ═══════════════════════════════════════════
 function Onboarding({ onComplete }) {
+  const isMobile = useIsMobile();
   const [step, setStep] = useState(0);
   const [p, setP] = useState({
     filing: "single", state: "TX", salary: 0, freelance: 0, rentalNet: 0, dividends: 0,
@@ -678,7 +686,7 @@ function Onboarding({ onComplete }) {
       <div style={{ position: "absolute", top: "20%", left: "30%", width: 400, height: 400, borderRadius: "50%", background: `radial-gradient(circle, ${C.emx}0.04) 0%, transparent 70%)`, pointerEvents: "none" }} />
       <div style={{ position: "absolute", bottom: "10%", right: "20%", width: 300, height: 300, borderRadius: "50%", background: `radial-gradient(circle, ${C.bl}08 0%, transparent 70%)`, pointerEvents: "none" }} />
 
-      <div style={{ position: "relative", width: 520, maxHeight: "90vh", overflowY: "auto", opacity: animating ? 0 : 1, transform: animating ? "translateY(10px)" : "translateY(0)", transition: "all 0.2s ease" }}>
+      <div style={{ position: "relative", width: isMobile?"100%":520, maxHeight: "90vh", overflowY: "auto", opacity: animating ? 0 : 1, transform: animating ? "translateY(10px)" : "translateY(0)", transition: "all 0.2s ease", padding: isMobile?"0 20px":"0" }}>
 
         {/* Progress bar */}
         {step > 0 && <div style={{ marginBottom: 28 }}>
@@ -850,6 +858,7 @@ export default function TaxIQ() {
   const [showProfile, setShowProfile] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [costMethod, setCostMethod] = useState("fifo");
+  const isMobile = useIsMobile();
 
   // Onboarding state
   const [onboarded, setOnboarded] = useState(() => {
@@ -908,13 +917,13 @@ export default function TaxIQ() {
   }
 
   return (
-    <div style={{width:"100vw",height:"100vh",display:"flex",background:C.bg,fontFamily:ff,overflow:"hidden",color:C.t2,fontSize:13}}>
+    <div style={{width:"100vw",height:"100vh",display:"flex",flexDirection:isMobile?"column":"row",background:C.bg,fontFamily:ff,overflow:"hidden",color:C.t2,fontSize:13}}>
       <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-      {showProfile && <ProfileModal profile={profile} setProfile={setProfile} onClose={()=>setShowProfile(false)} isPro={isPro} onUpgrade={openUpgrade}/>}
-      {showUpgrade && <UpgradeModal onClose={()=>setShowUpgrade(false)} onUpgrade={handleUpgrade} onRestore={handleRestore}/>}
+      {showProfile && <ProfileModal profile={profile} setProfile={setProfile} onClose={()=>setShowProfile(false)} isPro={isPro} onUpgrade={openUpgrade} isMobile={isMobile}/>}
+      {showUpgrade && <UpgradeModal onClose={()=>setShowUpgrade(false)} onUpgrade={handleUpgrade} onRestore={handleRestore} isMobile={isMobile}/>}
 
-      {/* Sidebar */}
-      <div style={{width:sbOpen?192:52,flexShrink:0,borderRight:`1px solid ${C.bd}`,display:"flex",flexDirection:"column",transition:"width 0.2s",overflow:"hidden",background:C.s1}}>
+      {/* Desktop Sidebar */}
+      {!isMobile && <div style={{width:sbOpen?192:52,flexShrink:0,borderRight:`1px solid ${C.bd}`,display:"flex",flexDirection:"column",transition:"width 0.2s",overflow:"hidden",background:C.s1}}>
         <div style={{padding:"14px 12px",display:"flex",alignItems:"center",gap:10,borderBottom:`1px solid ${C.bd}`,minHeight:50}}>
           <div onClick={()=>setSbOpen(!sbOpen)} style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${C.em},${C.emd})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:C.bg,cursor:"pointer",flexShrink:0}}>T</div>
           {sbOpen&&<span style={{color:C.t1,fontSize:15,fontWeight:700,whiteSpace:"nowrap"}}>TaxIQ</span>}
@@ -936,22 +945,43 @@ export default function TaxIQ() {
             :<button onClick={openUpgrade} style={{flex:1,padding:"6px",borderRadius:6,border:`1px solid ${C.emx}0.2)`,background:`${C.emx}0.06)`,color:C.em,cursor:"pointer",fontSize:10,fontFamily:ff,fontWeight:600}}>⚡ Pro</button>}
           </div>
         </div>}
-      </div>
+      </div>}
+
+      {/* Mobile Top Bar */}
+      {isMobile && <div style={{display:"flex",alignItems:"center",padding:"10px 16px",borderBottom:`1px solid ${C.bd}`,background:C.s1,flexShrink:0}}>
+        <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${C.em},${C.emd})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:C.bg,flexShrink:0}}>T</div>
+        <span style={{color:C.t1,fontSize:15,fontWeight:700,marginLeft:8}}>TaxIQ</span>
+        {isPro&&<Chip color={C.em} style={{fontSize:9,marginLeft:6}}>PRO</Chip>}
+        <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
+          <button onClick={()=>setShowProfile(true)} style={{background:"none",border:`1px solid ${C.bd}`,borderRadius:8,padding:"6px 10px",color:C.t3,cursor:"pointer",fontSize:10,fontFamily:ff}}>✏️ Profile</button>
+          {!isPro&&<button onClick={openUpgrade} style={{background:`${C.emx}0.06)`,border:`1px solid ${C.emx}0.2)`,borderRadius:8,padding:"6px 10px",color:C.em,cursor:"pointer",fontSize:10,fontWeight:600,fontFamily:ff}}>⚡ Pro</button>}
+        </div>
+      </div>}
 
       {/* Content */}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         <div style={{flex:1,overflow:"hidden"}}>
-          {tab==="dash"&&<Dashboard data={data} go={setTab} profile={profile} isPro={isPro} onUpgrade={openUpgrade}/>}
-          {tab==="save"&&<SaveMoney data={data} profile={profile} isPro={isPro} onUpgrade={openUpgrade}/>}
-          {tab==="plan"&&<PlanAhead data={data} profile={profile} isPro={isPro} onUpgrade={openUpgrade}/>}
-          {tab==="comply"&&<Compliance isPro={isPro} onUpgrade={openUpgrade}/>}
-          {tab==="ask"&&<Ask profile={profile} data={data} isPro={isPro} onUpgrade={openUpgrade}/>}
+          {tab==="dash"&&<Dashboard data={data} go={setTab} profile={profile} isPro={isPro} onUpgrade={openUpgrade} isMobile={isMobile}/>}
+          {tab==="save"&&<SaveMoney data={data} profile={profile} isPro={isPro} onUpgrade={openUpgrade} isMobile={isMobile}/>}
+          {tab==="plan"&&<PlanAhead data={data} profile={profile} isPro={isPro} onUpgrade={openUpgrade} isMobile={isMobile}/>}
+          {tab==="comply"&&<Compliance isPro={isPro} onUpgrade={openUpgrade} isMobile={isMobile}/>}
+          {tab==="ask"&&<Ask profile={profile} data={data} isPro={isPro} onUpgrade={openUpgrade} isMobile={isMobile}/>}
         </div>
-        <div style={{padding:"6px 20px",borderTop:`1px solid ${C.bd}`,background:C.s1,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        {!isMobile && <div style={{padding:"6px 20px",borderTop:`1px solid ${C.bd}`,background:C.s1,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{color:C.t4,fontSize:9.5}}>TaxIQ is for informational purposes only — not tax, legal, or financial advice. Consult a qualified CPA.</span>
           <span style={{color:C.t4,fontSize:9}}>Tax rates: 2025 TY</span>
-        </div>
+        </div>}
       </div>
+
+      {/* Mobile Bottom Nav */}
+      {isMobile && <div style={{display:"flex",borderTop:`1px solid ${C.bd}`,background:C.s1,flexShrink:0,paddingBottom:"env(safe-area-inset-bottom, 0px)"}}>
+        {nav.map(n=>(
+          <button key={n.id} onClick={()=>setTab(n.id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"10px 0 8px",border:"none",cursor:"pointer",background:"transparent",color:tab===n.id?C.em:C.t4,fontFamily:ff,fontSize:9.5,fontWeight:tab===n.id?600:400,transition:"all 0.15s",borderTop:tab===n.id?`2px solid ${C.em}`:"2px solid transparent"}}>
+            <span style={{fontSize:18}}>{n.icon}</span>
+            <span>{n.label}</span>
+          </button>
+        ))}
+      </div>}
     </div>
   );
 }
