@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 
 /*
- * TaxIQ v11 — Freemium with Stripe-gated Pro tier
+ * TaxIQ v12 — Freemium with onboarding flow
+ * New: Guided 4-step onboarding, persistent profiles, zero-default start
  * Free: basic calc, state lookup, 3 AI Q/mo, view-only compliance
  * Pro ($79/yr): full platform, all features unlocked
  */
@@ -21,7 +22,7 @@ const pct = n => (n * 100).toFixed(1) + "%";
 // ═══════════════════════════════════════════
 // STRIPE CONFIG — Replace with your real IDs
 // ═══════════════════════════════════════════
-const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/test_7sY5kFduz0ePfONbcvfAc00";
+const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/8x27sLaAlf45dHp9iueAg00";
 // Create at: Stripe Dashboard → Payment Links → New
 // Product: "TaxIQ Pro", Price: $79/year (recurring)
 // After payment redirect: your app URL + ?upgraded=true
@@ -619,6 +620,213 @@ function Ask({ profile, data, isPro, onUpgrade }) {
 }
 
 // ═══════════════════════════════════════════
+// ONBOARDING WIZARD
+// ═══════════════════════════════════════════
+function Onboarding({ onComplete }) {
+  const [step, setStep] = useState(0);
+  const [p, setP] = useState({
+    filing: "single", state: "TX", salary: 0, freelance: 0, rentalNet: 0, dividends: 0,
+    retirement401k: 0, retirementIRA: 0, charitable: 0, homeOffice: 0, healthInsurance: 0, foreign: false,
+    hasFreelance: false, hasRental: false, hasDividends: false, hasInvestments: true,
+  });
+  const u = (k, v) => setP(prev => ({ ...prev, [k]: v }));
+  const [animating, setAnimating] = useState(false);
+  const goNext = () => { setAnimating(true); setTimeout(() => { setStep(s => s + 1); setAnimating(false); }, 200); };
+  const goBack = () => { setAnimating(true); setTimeout(() => { setStep(s => s - 1); setAnimating(false); }, 200); };
+
+  const finish = () => {
+    const profile = {
+      filing: p.filing, state: p.state, salary: p.salary,
+      freelance: p.hasFreelance ? p.freelance : 0,
+      rentalNet: p.hasRental ? p.rentalNet : 0,
+      dividends: p.hasDividends ? p.dividends : 0,
+      retirement401k: p.retirement401k, retirementIRA: p.retirementIRA,
+      charitable: p.charitable, homeOffice: p.homeOffice, healthInsurance: 0,
+      foreign: p.foreign,
+    };
+    try { localStorage.setItem("taxiq-profile", JSON.stringify(profile)); localStorage.setItem("taxiq-onboarded", "true"); } catch {}
+    onComplete(profile);
+  };
+
+  const stepCount = 4;
+  const progress = ((step + 1) / stepCount) * 100;
+
+  const btnPrimary = { padding: "13px 28px", borderRadius: 10, border: "none", background: C.em, color: C.bg, fontSize: 14, fontWeight: 700, fontFamily: ff, cursor: "pointer", transition: "all 0.2s" };
+  const btnGhost = { padding: "13px 28px", borderRadius: 10, border: `1px solid ${C.bd}`, background: "transparent", color: C.t2, fontSize: 14, fontWeight: 600, fontFamily: ff, cursor: "pointer" };
+  const cardStyle = (active) => ({ padding: "16px 20px", borderRadius: 12, border: `1px solid ${active ? C.em : C.bd}`, background: active ? `${C.emx}0.06)` : C.s2, cursor: "pointer", transition: "all 0.15s", textAlign: "left" });
+
+  return (
+    <div style={{ width: "100vw", height: "100vh", background: C.bg, fontFamily: ff, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+      <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      {/* Background ambient */}
+      <div style={{ position: "absolute", top: "20%", left: "30%", width: 400, height: 400, borderRadius: "50%", background: `radial-gradient(circle, ${C.emx}0.04) 0%, transparent 70%)`, pointerEvents: "none" }} />
+      <div style={{ position: "absolute", bottom: "10%", right: "20%", width: 300, height: 300, borderRadius: "50%", background: `radial-gradient(circle, ${C.bl}08 0%, transparent 70%)`, pointerEvents: "none" }} />
+
+      <div style={{ position: "relative", width: 520, maxHeight: "90vh", overflowY: "auto", opacity: animating ? 0 : 1, transform: animating ? "translateY(10px)" : "translateY(0)", transition: "all 0.2s ease" }}>
+
+        {/* Progress bar */}
+        {step > 0 && <div style={{ marginBottom: 28 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <span style={{ color: C.t4, fontSize: 11, fontWeight: 600 }}>Step {step} of {stepCount - 1}</span>
+            <span style={{ color: C.t4, fontSize: 11 }}>{Math.round(progress)}%</span>
+          </div>
+          <div style={{ height: 3, background: C.s3, borderRadius: 2, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${progress}%`, background: C.em, borderRadius: 2, transition: "width 0.4s ease" }} />
+          </div>
+        </div>}
+
+        {/* STEP 0: Welcome */}
+        {step === 0 && <div style={{ textAlign: "center" }}>
+          <div style={{ width: 56, height: 56, borderRadius: 14, background: `linear-gradient(135deg, ${C.em}, ${C.emd})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 800, color: C.bg, margin: "0 auto 20px" }}>T</div>
+          <h1 style={{ color: C.t1, fontSize: 28, fontWeight: 700, margin: "0 0 8px", lineHeight: 1.3 }}>Know what you owe.<br /><span style={{ color: C.em }}>Keep what you earned.</span></h1>
+          <p style={{ color: C.t3, fontSize: 14.5, lineHeight: 1.6, maxWidth: 400, margin: "0 auto 32px" }}>TaxIQ calculates your complete tax picture across every income source — then finds every legal way to lower it.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 36 }}>
+            {[["⚡", "30 seconds", "to your total tax number"], ["🌎", "50 states", "with real bracket data"], ["🤖", "AI advisor", "personalized to you"]].map(([icon, title, desc], i) => (
+              <div key={i} style={{ background: C.s2, border: `1px solid ${C.bd}`, borderRadius: 10, padding: "16px 12px", textAlign: "center" }}>
+                <div style={{ fontSize: 22, marginBottom: 6 }}>{icon}</div>
+                <div style={{ color: C.t1, fontSize: 13, fontWeight: 600 }}>{title}</div>
+                <div style={{ color: C.t4, fontSize: 11, marginTop: 2 }}>{desc}</div>
+              </div>
+            ))}
+          </div>
+          <button onClick={goNext} style={{ ...btnPrimary, width: "100%", padding: "15px", fontSize: 15 }}>Get Started — It's Free</button>
+          <p style={{ color: C.t4, fontSize: 11, marginTop: 12 }}>Takes about 30 seconds. No signup required.</p>
+        </div>}
+
+        {/* STEP 1: Filing Status & State */}
+        {step === 1 && <div>
+          <h2 style={{ color: C.t1, fontSize: 22, fontWeight: 700, margin: "0 0 6px" }}>Filing information</h2>
+          <p style={{ color: C.t3, fontSize: 13, marginBottom: 24 }}>This determines your tax brackets and standard deduction.</p>
+
+          <div style={{ color: C.t4, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Filing Status</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 24 }}>
+            {[["single", "Single", "Unmarried individual"], ["mfj", "Married Filing Jointly", "Combined return with spouse"], ["mfs", "Married Filing Separately", "Separate return from spouse"], ["hoh", "Head of Household", "Unmarried with dependent"]].map(([val, title, desc]) => (
+              <div key={val} onClick={() => u("filing", val)} style={cardStyle(p.filing === val)}>
+                <div style={{ color: p.filing === val ? C.em : C.t1, fontSize: 13, fontWeight: 600 }}>{title}</div>
+                <div style={{ color: C.t4, fontSize: 11, marginTop: 2 }}>{desc}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ color: C.t4, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>State of Residence</div>
+          <select value={p.state} onChange={e => u("state", e.target.value)} style={{ width: "100%", background: C.s2, border: `1px solid ${C.bd}`, borderRadius: 10, padding: "12px 14px", color: C.t1, fontSize: 14, fontFamily: ff, outline: "none", marginBottom: 28 }}>
+            {Object.entries(ST).sort((a, b) => a[1].n.localeCompare(b[1].n)).map(([k, v]) => <option key={k} value={k}>{v.n}{v.t === "0" ? " ★ No income tax" : ""}</option>)}
+          </select>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={goBack} style={btnGhost}>Back</button>
+            <button onClick={goNext} style={{ ...btnPrimary, flex: 1 }}>Continue</button>
+          </div>
+        </div>}
+
+        {/* STEP 2: Income Sources */}
+        {step === 2 && <div>
+          <h2 style={{ color: C.t1, fontSize: 22, fontWeight: 700, margin: "0 0 6px" }}>Your income</h2>
+          <p style={{ color: C.t3, fontSize: 13, marginBottom: 24 }}>Add all your income sources for an accurate calculation.</p>
+
+          <div style={{ color: C.t4, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Primary Income</div>
+          <div style={{ display: "flex", alignItems: "center", background: C.s2, border: `1px solid ${C.bd}`, borderRadius: 10, padding: "12px 14px", marginBottom: 20 }}>
+            <span style={{ color: C.t4, fontSize: 14, marginRight: 6 }}>$</span>
+            <input type="number" value={p.salary || ""} onChange={e => u("salary", +e.target.value || 0)} placeholder="W-2 salary or primary income" style={{ flex: 1, background: "none", border: "none", outline: "none", color: C.t1, fontSize: 16, fontFamily: fm }} />
+          </div>
+
+          <div style={{ color: C.t4, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Additional Income <Chip color={C.t4}>Select all that apply</Chip></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
+            {[
+              ["hasFreelance", "💼", "Freelance / 1099", "freelance"],
+              ["hasRental", "🏠", "Rental Property", "rentalNet"],
+              ["hasDividends", "📈", "Dividends", "dividends"],
+            ].map(([flag, icon, label, field]) => (
+              <div key={flag}>
+                <div onClick={() => u(flag, !p[flag])} style={{ ...cardStyle(p[flag]), display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontSize: 18 }}>{icon}</span>
+                  <span style={{ color: p[flag] ? C.t1 : C.t3, fontSize: 13, fontWeight: 600, flex: 1 }}>{label}</span>
+                  <div style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${p[flag] ? C.em : C.t4}`, background: p[flag] ? `${C.emx}0.15)` : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {p[flag] && <span style={{ color: C.em, fontSize: 11 }}>✓</span>}
+                  </div>
+                </div>
+                {p[flag] && <div style={{ display: "flex", alignItems: "center", background: C.s1, border: `1px solid ${C.bd}`, borderRadius: 8, padding: "8px 12px", marginTop: 6, marginLeft: 36 }}>
+                  <span style={{ color: C.t4, fontSize: 13, marginRight: 4 }}>$</span>
+                  <input type="number" value={p[field] || ""} onChange={e => u(field, +e.target.value || 0)} placeholder="Annual amount" style={{ flex: 1, background: "none", border: "none", outline: "none", color: C.t1, fontSize: 14, fontFamily: fm }} />
+                </div>}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={goBack} style={btnGhost}>Back</button>
+            <button onClick={goNext} style={{ ...btnPrimary, flex: 1 }}>Continue</button>
+          </div>
+        </div>}
+
+        {/* STEP 3: Quick Options + Launch */}
+        {step === 3 && <div>
+          <h2 style={{ color: C.t1, fontSize: 22, fontWeight: 700, margin: "0 0 6px" }}>Almost done</h2>
+          <p style={{ color: C.t3, fontSize: 13, marginBottom: 24 }}>A few optional details to sharpen your results.</p>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div>
+                <div style={{ color: C.t4, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>401(k) Contributions</div>
+                <div style={{ display: "flex", alignItems: "center", background: C.s2, border: `1px solid ${C.bd}`, borderRadius: 8, padding: "9px 12px" }}>
+                  <span style={{ color: C.t4, fontSize: 12, marginRight: 4 }}>$</span>
+                  <input type="number" value={p.retirement401k || ""} onChange={e => u("retirement401k", +e.target.value || 0)} placeholder="0" style={{ flex: 1, background: "none", border: "none", outline: "none", color: C.t1, fontSize: 13, fontFamily: fm, width: "100%" }} />
+                </div>
+              </div>
+              <div>
+                <div style={{ color: C.t4, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>IRA Contributions</div>
+                <div style={{ display: "flex", alignItems: "center", background: C.s2, border: `1px solid ${C.bd}`, borderRadius: 8, padding: "9px 12px" }}>
+                  <span style={{ color: C.t4, fontSize: 12, marginRight: 4 }}>$</span>
+                  <input type="number" value={p.retirementIRA || ""} onChange={e => u("retirementIRA", +e.target.value || 0)} placeholder="0" style={{ flex: 1, background: "none", border: "none", outline: "none", color: C.t1, fontSize: 13, fontFamily: fm, width: "100%" }} />
+                </div>
+              </div>
+            </div>
+
+            <div onClick={() => u("foreign", !p.foreign)} style={{ ...cardStyle(p.foreign), display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
+              <span style={{ fontSize: 18 }}>🌍</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: p.foreign ? C.t1 : C.t3, fontSize: 13, fontWeight: 600 }}>Foreign financial accounts</div>
+                <div style={{ color: C.t4, fontSize: 11, marginTop: 1 }}>Bank or brokerage accounts outside the US</div>
+              </div>
+              <div style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${p.foreign ? C.em : C.t4}`, background: p.foreign ? `${C.emx}0.15)` : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {p.foreign && <span style={{ color: C.em, fontSize: 11 }}>✓</span>}
+              </div>
+            </div>
+          </div>
+
+          {/* Preview teaser */}
+          {p.salary > 0 && (() => {
+            const inc = p.salary + (p.hasFreelance ? p.freelance : 0) + (p.hasRental ? p.rentalNet : 0) + (p.hasDividends ? p.dividends : 0);
+            const stT = calcSt(p.state, inc, 0);
+            const fedT = calcFed(inc, 0, 0, p.filing, stT.tax);
+            const seT = p.hasFreelance ? Math.round(p.freelance * 0.9235 * 0.153) : 0;
+            const total = fedT.tot + stT.tax + seT;
+            return (
+              <div style={{ background: C.s2, border: `1px solid ${C.emx}0.15)`, borderRadius: 12, padding: "18px 22px", marginBottom: 24, textAlign: "center" }}>
+                <div style={{ color: C.t3, fontSize: 11, marginBottom: 4 }}>Estimated tax liability (before investment gains)</div>
+                <div style={{ color: C.t1, fontSize: 36, fontWeight: 700, fontFamily: fm }}>${$$(total)}</div>
+                <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 8 }}>
+                  <span style={{ color: C.t4, fontSize: 11 }}>Federal <strong style={{ color: C.t2, fontFamily: fm }}>${$$(fedT.tot)}</strong></span>
+                  <span style={{ color: C.t4, fontSize: 11 }}>{ST[p.state]?.n} <strong style={{ color: stT.tax > 0 ? C.yl : C.em, fontFamily: fm }}>${$$(stT.tax)}</strong></span>
+                  {seT > 0 && <span style={{ color: C.t4, fontSize: 11 }}>SE <strong style={{ color: C.pu, fontFamily: fm }}>${$$(seT)}</strong></span>}
+                </div>
+              </div>
+            );
+          })()}
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={goBack} style={btnGhost}>Back</button>
+            <button onClick={finish} style={{ ...btnPrimary, flex: 1, fontSize: 15, padding: "15px" }}>See My Full Tax Picture →</button>
+          </div>
+          <p style={{ color: C.t4, fontSize: 11, textAlign: "center", marginTop: 12 }}>You can always edit your profile later.</p>
+        </div>}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════
 export default function TaxIQ() {
@@ -627,6 +835,11 @@ export default function TaxIQ() {
   const [showProfile, setShowProfile] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [costMethod, setCostMethod] = useState("fifo");
+
+  // Onboarding state
+  const [onboarded, setOnboarded] = useState(() => {
+    try { return localStorage.getItem("taxiq-onboarded") === "true"; } catch { return false; }
+  });
 
   // Tier state — check URL for ?upgraded=true (Stripe redirect)
   const [isPro, setIsPro] = useState(() => {
@@ -640,11 +853,22 @@ export default function TaxIQ() {
     return false;
   });
 
-  const [profile, setProfile] = useState({
-    salary: 185000, freelance: 25000, rentalNet: 12000, dividends: 4200,
-    state: "CA", filing: "single", foreign: true,
-    retirement401k: 23000, retirementIRA: 7000, homeOffice: 0, healthInsurance: 0, charitable: 5000,
+  const [profile, setProfile] = useState(() => {
+    const defaults = {
+      salary: 0, freelance: 0, rentalNet: 0, dividends: 0,
+      state: "TX", filing: "single", foreign: false,
+      retirement401k: 0, retirementIRA: 0, homeOffice: 0, healthInsurance: 0, charitable: 0,
+    };
+    try {
+      const saved = localStorage.getItem("taxiq-profile");
+      if (saved) return { ...defaults, ...JSON.parse(saved) };
+    } catch {}
+    return defaults;
   });
+  // Save profile to localStorage whenever it changes
+  useEffect(() => {
+    try { localStorage.setItem("taxiq-profile", JSON.stringify(profile)); } catch {}
+  }, [profile]);
   const data = usePortfolio(costMethod);
   const nav = [{id:"dash",icon:"⚡",label:"Dashboard"},{id:"save",icon:"💰",label:"Save Money"},{id:"plan",icon:"📊",label:"Plan Ahead"},{id:"comply",icon:"📋",label:"Compliance"},{id:"ask",icon:"💬",label:"AI Advisor"}];
 
@@ -662,6 +886,11 @@ export default function TaxIQ() {
     try { if (localStorage.getItem("taxiq-pro") === "true") { setIsPro(true); setShowUpgrade(false); } } catch {}
   };
   const openUpgrade = () => setShowUpgrade(true);
+
+  // Show onboarding for new users
+  if (!onboarded) {
+    return <Onboarding onComplete={(p) => { setProfile(p); setOnboarded(true); }} />;
+  }
 
   return (
     <div style={{width:"100vw",height:"100vh",display:"flex",background:C.bg,fontFamily:ff,overflow:"hidden",color:C.t2,fontSize:13}}>
