@@ -1,16 +1,5 @@
 {
-  "framework": "vite",
-  "functions": {
-    "api/ask.js": {
-      "runtime": "@vercel/node@3",
-      "maxDuration": 30
-    },
-    "api/health.js": {
-      "runtime": "@vercel/node@3"
-    }
-  },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/:path*" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
