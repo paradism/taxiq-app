@@ -53,11 +53,33 @@ function Tabs({ items, active, onChange }) {
   return <div style={{ display: "flex", gap: 2, background: C.s1, borderRadius: 10, padding: 3, flexWrap: "wrap" }}>{items.map(t => <button key={t[0]} onClick={() => onChange(t[0])} style={{ padding: "7px 14px", borderRadius: 8, border: "none", cursor: "pointer", background: active === t[0] ? C.em : "transparent", color: active === t[0] ? C.bg : C.t3, fontSize: 12, fontWeight: 600, fontFamily: ff, transition: "all 0.15s", whiteSpace: "nowrap" }}>{t[1]}</button>)}</div>;
 }
 function Md({ text }) {
-  const fmt = s => { const p = []; let r = s, k = 0; while (r.length) { const m = r.match(/\*\*(.+?)\*\*/); if (m) { const i = r.indexOf(m[0]); if (i > 0) p.push(<span key={k++}>{r.slice(0, i)}</span>); p.push(<strong key={k++} style={{ color: C.t1, fontWeight: 600 }}>{m[1]}</strong>); r = r.slice(i + m[0].length); } else { p.push(<span key={k++}>{r}</span>); break; } } return p; };
+  const fmt = s => {
+    const p = []; let r = s, k = 0;
+    while (r.length) {
+      // Match bold, inline code, or links
+      const mb = r.match(/\*\*(.+?)\*\*/);
+      const mc = r.match(/`([^`]+)`/);
+      const ml = r.match(/\[([^\]]+)\]\(([^)]+)\)/);
+      // Find earliest match
+      const matches = [mb, mc, ml].filter(Boolean).map(m => ({ m, i: r.indexOf(m[0]) }));
+      if (matches.length === 0) { p.push(<span key={k++}>{r}</span>); break; }
+      const first = matches.reduce((a, b) => a.i < b.i ? a : b);
+      if (first.i > 0) p.push(<span key={k++}>{r.slice(0, first.i)}</span>);
+      if (first.m === mb) p.push(<strong key={k++} style={{ color: C.t1, fontWeight: 600 }}>{mb[1]}</strong>);
+      else if (first.m === mc) p.push(<code key={k++} style={{ background: C.s3, padding: "1px 5px", borderRadius: 4, fontSize: 12, fontFamily: fm, color: C.em }}>{mc[1]}</code>);
+      else if (first.m === ml) p.push(<a key={k++} href={ml[2]} target="_blank" rel="noopener" style={{ color: C.bl, textDecoration: "underline" }}>{ml[1]}</a>);
+      r = r.slice(first.i + first.m[0].length);
+    }
+    return p;
+  };
   return <div>{text.split("\n").map((l, i) => {
     if (l.includes("🟢")||l.includes("🟡")||l.includes("🔴")) { const c = l.includes("🟢")?C.em:l.includes("🟡")?C.yl:C.rd; return <div key={i} style={{ background:`${c}10`,border:`1px solid ${c}20`,borderRadius:10,padding:"10px 14px",margin:"8px 0",color:c,fontSize:13 }}>{fmt(l)}</div>; }
+    if (l.startsWith("## ")) return <h2 key={i} style={{ color:C.t1,fontSize:14,fontWeight:700,margin:"16px 0 6px" }}>{l.slice(3)}</h2>;
     if (l.startsWith("### ")) return <h3 key={i} style={{ color:C.em,fontSize:11.5,fontWeight:700,margin:"14px 0 5px",textTransform:"uppercase",letterSpacing:"0.05em" }}>{l.slice(4)}</h3>;
+    if (/^\d+\.\s/.test(l)) { const num = l.match(/^(\d+)\.\s/)[1]; return <div key={i} style={{ display:"flex",gap:8,margin:"3px 0",paddingLeft:4 }}><span style={{color:C.em,fontFamily:fm,fontSize:12,minWidth:16,fontWeight:600}}>{num}.</span><span style={{color:C.t2,lineHeight:1.6}}>{fmt(l.replace(/^\d+\.\s/,""))}</span></div>; }
     if (l.startsWith("- ")) return <div key={i} style={{ display:"flex",gap:8,margin:"3px 0",paddingLeft:4 }}><span style={{color:C.em}}>•</span><span style={{color:C.t2,lineHeight:1.6}}>{fmt(l.slice(2))}</span></div>;
+    if (l.startsWith("> ")) return <div key={i} style={{ borderLeft:`3px solid ${C.em}`,padding:"4px 12px",margin:"6px 0",color:C.t3,fontSize:12.5,fontStyle:"italic" }}>{fmt(l.slice(2))}</div>;
+    if (l.trim()==="---"||l.trim()==="***") return <hr key={i} style={{ border:"none",borderTop:`1px solid ${C.bd}`,margin:"10px 0" }}/>;
     if (l.trim()==="") return <div key={i} style={{height:6}} />;
     return <p key={i} style={{ color:C.t2,margin:"4px 0",lineHeight:1.6 }}>{fmt(l)}</p>;
   })}</div>;
@@ -972,55 +994,108 @@ function Ask({ profile, data, isPro, onUpgrade, isMobile }) {
   const [ld, setLd] = useState(false);
   const [mode, setMode] = useState("r");
   const [qUsed, setQUsed] = useState(0);
+  const [errMsg, setErrMsg] = useState("");
   const ref = useRef(null);
   const FREE_LIMIT = 3;
   useEffect(()=>{ref.current?.scrollIntoView({behavior:"smooth"});},[msgs,ld]);
-  useEffect(()=>{ try{const r=localStorage.getItem("taxiq-ai-used"); if(r)setQUsed(+r);}catch{} },[]);
 
-  const profileCtx = `User: Filing ${profile.filing}, ${ST[profile.state]?.n}. W-2: $${$$(profile.salary)}, Freelance: $${$$(profile.freelance)}, Rental: $${$$(profile.rentalNet)}, Dividends: $${$$(profile.dividends)}. Portfolio: $${$$(data.tv)}. LT gains: $${$$(data.ltGains)}, ST gains: $${$$(data.stGains)}.`;
+  // Monthly reset logic — track usage by month
+  useEffect(()=>{
+    try {
+      const raw = localStorage.getItem("taxiq-ai-usage");
+      if (raw) {
+        const usage = JSON.parse(raw);
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+        if (usage.month === currentMonth) {
+          setQUsed(usage.count);
+        } else {
+          // New month — reset
+          localStorage.setItem("taxiq-ai-usage", JSON.stringify({ month: currentMonth, count: 0 }));
+          setQUsed(0);
+        }
+      }
+    } catch {}
+  }, []);
+
+  const incrementUsage = () => {
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+    const newCount = qUsed + 1;
+    setQUsed(newCount);
+    try { localStorage.setItem("taxiq-ai-usage", JSON.stringify({ month: currentMonth, count: newCount })); } catch {}
+  };
+
+  const profileCtx = `User: Filing ${profile.filing}, ${ST[profile.state]?.n}. W-2: $${$$(profile.salary)}, Freelance: $${$$(profile.freelance)}, Rental: $${$$(profile.rentalNet)}, Dividends: $${$$(profile.dividends)}. Portfolio: $${$$(data.tv)}. LT gains: $${$$(data.ltGains)}, ST gains: $${$$(data.stGains)}. Marginal rate: ${pct(calcFed(profile.salary+profile.freelance,0,0,profile.filing,0).marg)}.`;
   const SYS = mode==="a"
-    ?`You are TaxIQ, a personalized AI tax advisor. ${profileCtx}\n\nGive specific, risk-rated recommendations. Structure: plain English → recommendation (🟢 LOW / 🟡 MODERATE / 🔴 HIGH risk) → action items → caveats. Suggest CPA for implementation.`
-    :`You are TaxIQ, an AI tax research assistant. Answer in plain English. Cite IRC sections when helpful. Cover: federal, 50 states, capital gains, SE tax, retirement, deductions, FATCA, CRS, FBAR.`;
+    ?`You are TaxIQ, a personalized AI tax advisor. ${profileCtx}\n\nGive specific, risk-rated recommendations. Structure: plain English → recommendation (🟢 LOW / 🟡 MODERATE / 🔴 HIGH risk) → action items → caveats. Suggest CPA for implementation. Always include a disclaimer that this is informational only and not professional tax advice.`
+    :`You are TaxIQ, an AI tax research assistant. ${profileCtx}\n\nAnswer in plain English. Cite IRC sections when helpful. Cover: federal, 50 states, capital gains, SE tax, retirement, deductions, FATCA, CRS, FBAR. Always note this is informational only.`;
 
   const send = async (text) => {
     if (!text.trim()||ld) return;
     if (!isPro && qUsed >= FREE_LIMIT) { onUpgrade(); return; }
+    setErrMsg("");
     const um = {role:"user",content:text.trim()};
     const nm = [...msgs,um]; setMsgs(nm); setInput(""); setLd(true);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4096,system:SYS,messages:nm.map(m=>({role:m.role,content:m.content})),tools:[{type:"web_search_20250305",name:"web_search"}]})});
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system: SYS,
+          messages: nm.map(m => ({ role: m.role, content: m.content })),
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Server error (${res.status})`);
+      }
+
       const d = await res.json();
-      setMsgs([...nm,{role:"assistant",content:d.content.map(i=>i.type==="text"?i.text:"").filter(Boolean).join("\n")}]);
-      if (!isPro) { const nq = qUsed+1; setQUsed(nq); try{localStorage.setItem("taxiq-ai-used",""+nq);}catch{} }
-    } catch { setMsgs([...nm,{role:"assistant",content:"Connection error. Please try again."}]); }
-    finally { setLd(false); }
+      if (!d.text || d.text.trim().length === 0) throw new Error("Empty response from AI");
+      setMsgs([...nm, { role: "assistant", content: d.text }]);
+      if (!isPro) incrementUsage();
+    } catch (e) {
+      const userMsg = e.message.includes("Failed to fetch") || e.message.includes("NetworkError")
+        ? "Network error — check your connection and try again."
+        : e.message.includes("AI service not configured")
+        ? "AI service is being set up. Please try again shortly."
+        : `Something went wrong: ${e.message}`;
+      setErrMsg(userMsg);
+      setMsgs([...nm, { role: "assistant", content: `⚠️ ${userMsg}` }]);
+    } finally { setLd(false); }
   };
+
   const prompts = mode==="a"
-    ?["Based on my profile, what should I prioritize?","Should I form an S-Corp?","Does a Roth conversion make sense?"]
-    :["What's the QBI deduction?","How are staking rewards taxed?","Which states have no income tax?"];
+    ?["Based on my profile, what should I prioritize?","Should I form an S-Corp?","Does a Roth conversion make sense?","How can I lower my effective tax rate?"]
+    :["What's the QBI deduction?","How are staking rewards taxed?","Which states have no income tax?","Explain the wash sale rule for crypto"];
   const atLimit = !isPro && qUsed >= FREE_LIMIT;
+  const now = new Date();
+  const daysLeft = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
 
   return (
     <div style={{height:"100%",display:"flex",flexDirection:"column",padding:isMobile?"0 16px":"0 28px"}}>
-      <div style={{padding:"14px 0",display:"flex",gap:6,alignItems:"center"}}>
-        <Tabs items={[["r","🔍 Research"],["a","⚖️ Advice"]]} active={mode} onChange={m=>{setMode(m);setMsgs([]);}}/>
-        {!isPro && <span style={{marginLeft:"auto",color:C.t4,fontSize:11,fontFamily:fm}}>{Math.max(FREE_LIMIT-qUsed,0)}/{FREE_LIMIT} free</span>}
+      <div style={{padding:"14px 0",display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+        <Tabs items={[["r","🔍 Research"],["a","⚖️ Advice"]]} active={mode} onChange={m=>{setMode(m);setMsgs([]);setErrMsg("");}}/>
+        {!isPro && <span style={{marginLeft:"auto",color:qUsed>=FREE_LIMIT?C.rd:C.t4,fontSize:11,fontFamily:fm}}>{Math.max(FREE_LIMIT-qUsed,0)}/{FREE_LIMIT} free<span style={{color:C.t4,fontSize:9.5,marginLeft:4}}>resets in {daysLeft}d</span></span>}
         {isPro && <ProBadge isPro={true}/>}
-        {msgs.length>0&&<button onClick={()=>setMsgs([])} style={{marginLeft:isPro?"auto":8,background:"none",border:`1px solid ${C.bd}`,borderRadius:8,padding:"5px 12px",color:C.t3,cursor:"pointer",fontSize:11,fontFamily:ff}}>Clear</button>}
+        {msgs.length>0&&<button onClick={()=>{setMsgs([]);setErrMsg("");}} style={{marginLeft:isPro?"auto":8,background:"none",border:`1px solid ${C.bd}`,borderRadius:8,padding:"5px 12px",color:C.t3,cursor:"pointer",fontSize:11,fontFamily:ff}}>Clear</button>}
       </div>
-      {mode==="a"&&msgs.length===0&&isPro&&<div style={{background:`${C.emx}0.06)`,border:`1px solid ${C.emx}0.15)`,borderRadius:10,padding:"10px 14px",marginBottom:8,fontSize:12,color:C.em}}>💡 Using your profile for personalized advice.</div>}
+      {mode==="a"&&msgs.length===0&&isPro&&<div style={{background:`${C.emx}0.06)`,border:`1px solid ${C.emx}0.15)`,borderRadius:10,padding:"10px 14px",marginBottom:8,fontSize:12,color:C.em}}>💡 Using your profile for personalized advice. Your marginal rate, income sources, and state are included as context.</div>}
       <div style={{flex:1,overflowY:"auto"}}>
-        {msgs.length===0&&!atLimit&&<div style={{textAlign:"center",padding:"32px 0",maxWidth:400,margin:"0 auto"}}><div style={{fontSize:30,marginBottom:6}}>{mode==="a"?"⚖️":"🔍"}</div><div style={{color:C.t1,fontSize:16,fontWeight:700,marginBottom:14}}>{mode==="a"?"Get tax advice":"Research tax rules"}</div><div style={{display:"flex",flexDirection:"column",gap:5}}>{prompts.map((q,i)=><Box key={i} onClick={()=>send(q)} style={{padding:11,cursor:"pointer",textAlign:"left"}}><span style={{color:C.t2,fontSize:12}}>{q}</span></Box>)}</div></div>}
-        {atLimit&&msgs.length===0&&<div style={{textAlign:"center",padding:"48px 0"}}><div style={{fontSize:36,marginBottom:12}}>🔒</div><div style={{color:C.t1,fontSize:16,fontWeight:700,marginBottom:8}}>You've used your 3 free questions</div><div style={{color:C.t3,fontSize:13,marginBottom:20}}>Upgrade to Pro for unlimited AI tax advice, personalized to your profile.</div><button onClick={onUpgrade} style={{padding:"12px 28px",borderRadius:10,border:"none",background:C.em,color:C.bg,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:ff}}>Upgrade to Pro — $79/yr</button></div>}
-        {msgs.map((m,i)=>(<div key={i} style={{marginBottom:11,display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start"}}><div style={{maxWidth:m.role==="user"?"80%":"95%",padding:"10px 14px",borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",background:m.role==="user"?C.em:C.s2,border:m.role==="user"?"none":`1px solid ${C.bd}`}}>{m.role==="user"?<p style={{color:C.bg,fontSize:13,lineHeight:1.6,margin:0,fontWeight:500}}>{m.content}</p>:<div style={{fontSize:13,lineHeight:1.65}}><Md text={m.content}/></div>}</div></div>))}
-        {ld&&<div style={{display:"flex"}}><div style={{padding:"10px 14px",borderRadius:"14px 14px 14px 4px",background:C.s2,border:`1px solid ${C.bd}`}}><div style={{display:"flex",gap:5}}>{[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:4,background:C.em,animation:`dt 1.2s ease-in-out ${i*.15}s infinite`}}/>)}<style>{`@keyframes dt{0%,60%,100%{opacity:.3}30%{opacity:1}}`}</style></div></div></div>}
+        {msgs.length===0&&!atLimit&&<div style={{textAlign:"center",padding:isMobile?"24px 0":"32px 0",maxWidth:400,margin:"0 auto"}}><div style={{fontSize:30,marginBottom:6}}>{mode==="a"?"⚖️":"🔍"}</div><div style={{color:C.t1,fontSize:16,fontWeight:700,marginBottom:6}}>{mode==="a"?"Get tax advice":"Research tax rules"}</div><div style={{color:C.t3,fontSize:12,marginBottom:14}}>{mode==="a"?"Personalized recommendations based on your tax profile":"Ask about any tax topic — federal, state, crypto, international"}</div><div style={{display:"flex",flexDirection:"column",gap:5}}>{prompts.map((q,i)=><Box key={i} onClick={()=>send(q)} style={{padding:11,cursor:"pointer",textAlign:"left"}}><span style={{color:C.t2,fontSize:12}}>{q}</span></Box>)}</div></div>}
+        {atLimit&&msgs.length===0&&<div style={{textAlign:"center",padding:"48px 0"}}><div style={{fontSize:36,marginBottom:12}}>🔒</div><div style={{color:C.t1,fontSize:16,fontWeight:700,marginBottom:8}}>You've used your {FREE_LIMIT} free questions this month</div><div style={{color:C.t3,fontSize:13,marginBottom:6}}>Upgrade to Pro for unlimited AI tax advice, personalized to your profile.</div><div style={{color:C.t4,fontSize:12,marginBottom:20}}>Or wait {daysLeft} days — your free questions reset monthly.</div><button onClick={onUpgrade} style={{padding:"12px 28px",borderRadius:10,border:"none",background:C.em,color:C.bg,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:ff}}>Upgrade to Pro — $79/yr</button></div>}
+        {msgs.map((m,i)=>(<div key={i} style={{marginBottom:11,display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start"}}><div style={{maxWidth:m.role==="user"?(isMobile?"85%":"80%"):"95%",padding:"10px 14px",borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",background:m.role==="user"?C.em:C.s2,border:m.role==="user"?"none":`1px solid ${C.bd}`}}>{m.role==="user"?<p style={{color:C.bg,fontSize:13,lineHeight:1.6,margin:0,fontWeight:500}}>{m.content}</p>:<div style={{fontSize:13,lineHeight:1.65}}><Md text={m.content}/></div>}</div></div>))}
+        {ld&&<div style={{display:"flex"}}><div style={{padding:"10px 14px",borderRadius:"14px 14px 14px 4px",background:C.s2,border:`1px solid ${C.bd}`}}><div style={{display:"flex",gap:5,alignItems:"center"}}>{[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:4,background:C.em,animation:`dt 1.2s ease-in-out ${i*.15}s infinite`}}/>)}<span style={{color:C.t4,fontSize:11,marginLeft:6}}>Thinking...</span><style>{`@keyframes dt{0%,60%,100%{opacity:.3}30%{opacity:1}}`}</style></div></div></div>}
         <div ref={ref}/>
       </div>
-      <div style={{padding:"10px 0 14px"}}>
+      <div style={{padding:isMobile?"10px 0 20px":"10px 0 14px"}}>
         <div style={{display:"flex",gap:8,background:C.s2,border:`1px solid ${atLimit?C.rd+"40":C.bd}`,borderRadius:12,padding:"9px 12px",opacity:atLimit?0.5:1}}>
-          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();send(input);}}} placeholder={atLimit?"Upgrade to continue asking...":"Ask a tax question..."} disabled={atLimit} style={{flex:1,background:"none",border:"none",outline:"none",color:C.t1,fontSize:13,fontFamily:ff}}/>
-          <button onClick={()=>atLimit?onUpgrade():send(input)} disabled={!atLimit&&(!input.trim()||ld)} style={{width:32,height:32,borderRadius:8,border:"none",background:atLimit?C.em:(input.trim()&&!ld?C.em:C.s3),cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{atLimit?<span style={{fontSize:12}}>🔒</span>:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={input.trim()&&!ld?C.bg:C.t4} strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>}</button>
+          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();send(input);}}} placeholder={atLimit?"Upgrade to continue asking...":"Ask a tax question..."} disabled={atLimit||ld} style={{flex:1,background:"none",border:"none",outline:"none",color:C.t1,fontSize:13,fontFamily:ff}}/>
+          <button onClick={()=>atLimit?onUpgrade():send(input)} disabled={!atLimit&&(!input.trim()||ld)} style={{width:36,height:36,borderRadius:8,border:"none",background:atLimit?C.em:(input.trim()&&!ld?C.em:C.s3),cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{atLimit?<span style={{fontSize:12}}>🔒</span>:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={input.trim()&&!ld?C.bg:C.t4} strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>}</button>
         </div>
+        <div style={{textAlign:"center",marginTop:6}}><span style={{color:C.t4,fontSize:9.5}}>TaxIQ AI is for informational purposes only — not tax, legal, or financial advice.</span></div>
       </div>
     </div>
   );
