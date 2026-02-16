@@ -1,29 +1,40 @@
-// Vercel Serverless Function — proxies AI requests to Anthropic
-// API key is stored in Vercel env var ANTHROPIC_API_KEY (never exposed to browser)
+// Vercel Edge Function — proxies AI requests to Anthropic
+// Uses Web standard Request/Response (no CommonJS/ESM issues)
 
-export default async function handler(req, res) {
-  // CORS headers
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+export const config = {
+  runtime: "edge",
+};
 
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+export default async function handler(req) {
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    });
+  }
+
+  if (req.method !== "POST") {
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    console.error("ANTHROPIC_API_KEY not set in environment");
-    return res.status(500).json({ error: "AI service not configured" });
+    return Response.json({ error: "AI service not configured" }, { status: 500 });
   }
 
   try {
-    const { system, messages } = req.body;
+    const { system, messages } = await req.json();
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: "Messages required" });
+      return Response.json({ error: "Messages required" }, { status: 400 });
     }
 
-    // Sanitize — only pass role + content, limit conversation length
+    // Sanitize input
     const cleanMessages = messages.slice(-20).map(m => ({
       role: m.role === "assistant" ? "assistant" : "user",
       content: typeof m.content === "string" ? m.content.slice(0, 4000) : "",
@@ -48,21 +59,23 @@ export default async function handler(req, res) {
     if (!response.ok) {
       const errText = await response.text();
       console.error(`Anthropic API error ${response.status}:`, errText);
-      return res.status(502).json({ error: "AI service error", status: response.status });
+      return Response.json({ error: "AI service error", status: response.status }, { status: 502 });
     }
 
     const data = await response.json();
 
-    // Extract text content only — strip tool_use blocks
+    // Extract text content only
     const text = data.content
       .filter(block => block.type === "text")
       .map(block => block.text)
       .join("\n");
 
-    return res.status(200).json({ text });
+    return Response.json({ text }, {
+      headers: { "Access-Control-Allow-Origin": "*" },
+    });
 
   } catch (err) {
     console.error("Proxy error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
