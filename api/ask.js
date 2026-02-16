@@ -41,20 +41,17 @@ export default async function handler(req) {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta": "web-search-2025-03-05",
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
+        max_tokens: 2048,
         system: typeof system === "string" ? system.slice(0, 2000) : "",
         messages: cleanMessages,
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
       }),
     });
 
     if (!response.ok) {
       const errBody = await response.text();
-      // Surface the actual Anthropic error so we can debug
       return Response.json({
         error: `Anthropic ${response.status}: ${errBody}`,
       }, {
