@@ -1,12 +1,8 @@
-// Vercel Edge Function — proxies AI requests to Anthropic
-// Uses Web standard Request/Response (no CommonJS/ESM issues)
-
 export const config = {
   runtime: "edge",
 };
 
 export default async function handler(req) {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 200,
@@ -34,7 +30,6 @@ export default async function handler(req) {
       return Response.json({ error: "Messages required" }, { status: 400 });
     }
 
-    // Sanitize input
     const cleanMessages = messages.slice(-20).map(m => ({
       role: m.role === "assistant" ? "assistant" : "user",
       content: typeof m.content === "string" ? m.content.slice(0, 4000) : "",
@@ -46,6 +41,7 @@ export default async function handler(req) {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
+        "anthropic-beta": "web-search-2025-03-05",
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
@@ -57,14 +53,18 @@ export default async function handler(req) {
     });
 
     if (!response.ok) {
-      const errText = await response.text();
-      console.error(`Anthropic API error ${response.status}:`, errText);
-      return Response.json({ error: "AI service error", status: response.status }, { status: 502 });
+      const errBody = await response.text();
+      // Surface the actual Anthropic error so we can debug
+      return Response.json({
+        error: `Anthropic ${response.status}: ${errBody}`,
+      }, {
+        status: 502,
+        headers: { "Access-Control-Allow-Origin": "*" },
+      });
     }
 
     const data = await response.json();
 
-    // Extract text content only
     const text = data.content
       .filter(block => block.type === "text")
       .map(block => block.text)
@@ -75,7 +75,9 @@ export default async function handler(req) {
     });
 
   } catch (err) {
-    console.error("Proxy error:", err);
-    return Response.json({ error: "Internal server error" }, { status: 500 });
+    return Response.json({ error: `Proxy error: ${err.message}` }, {
+      status: 500,
+      headers: { "Access-Control-Allow-Origin": "*" },
+    });
   }
 }
