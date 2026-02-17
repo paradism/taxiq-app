@@ -325,44 +325,84 @@ const INTL = [{f:"🇺🇸",n:"United States",lt:"0/15/20%",cr:"Property"},{f:"�
 // ═══════════════════════════════════════════
 function ProfileModal({ profile, setProfile, onClose, isPro, onUpgrade, isMobile }) {
   const [p, setP] = useState({...profile});
+  const [warnings, setWarnings] = useState([]);
   const u = (k,v) => setP(prev => ({...prev, [k]:v}));
-  const multiIncome = isPro;
+
+  const validate = () => {
+    const w = [];
+    if (p.salary < 0 || p.freelance < 0 || p.rentalNet < 0 || p.dividends < 0) w.push("Income values can't be negative.");
+    if (p.retirement401k > 23000) w.push("401(k) max is $23,000 for 2025 ($30,500 if 50+).");
+    if (p.retirementIRA > 7000) w.push("IRA max is $7,000 for 2025 ($8,000 if 50+).");
+    if (p.retirement401k > 0 && p.salary === 0 && p.freelance === 0) w.push("401(k) requires employment income.");
+    if (p.homeOffice > 0 && p.freelance === 0) w.push("Home office deduction requires self-employment income.");
+    if (p.charitable > (p.salary + p.freelance + p.rentalNet + p.dividends) * 0.6) w.push("Charitable contributions generally capped at 60% of AGI.");
+    return w;
+  };
+
+  const save = () => {
+    const clean = {...p,
+      salary: Math.max(p.salary, 0),
+      freelance: Math.max(p.freelance, 0),
+      rentalNet: p.rentalNet, // can be negative (rental losses)
+      dividends: Math.max(p.dividends, 0),
+      retirement401k: Math.min(Math.max(p.retirement401k, 0), 30500),
+      retirementIRA: Math.min(Math.max(p.retirementIRA, 0), 8000),
+      charitable: Math.max(p.charitable, 0),
+      homeOffice: Math.max(p.homeOffice, 0),
+    };
+    setProfile(clean);
+    try { localStorage.setItem("taxiq-profile", JSON.stringify(clean)); } catch {}
+    onClose();
+  };
+
+  const w = validate();
+
   return (
     <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:isMobile?"flex-end":"center",justifyContent:"center"}}>
       <div onClick={onClose} style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}}/>
       <div style={{position:"relative",background:C.s1,border:`1px solid ${C.bd}`,borderRadius:isMobile?"16px 16px 0 0":16,padding:isMobile?20:28,width:isMobile?"100%":560,maxHeight:isMobile?"92vh":"85vh",overflowY:"auto",zIndex:101}}>
         {isMobile&&<div style={{width:36,height:4,borderRadius:2,background:C.s4,margin:"0 auto 14px"}}/>}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{color:C.t1,fontSize:18,fontWeight:700}}>Tax Profile</div><button onClick={onClose} style={{background:"none",border:"none",color:C.t3,fontSize:18,cursor:"pointer",padding:8}}>✕</button></div>
+
         <div style={{color:C.em,fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Filing Information</div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:20}}>
           <SelectField label="Filing Status" value={p.filing} onChange={v=>u("filing",v)} options={[["single","Single"],["mfj","Married Filing Jointly"],["mfs","Married Filing Separately"],["hoh","Head of Household"]]}/>
           <SelectField label="State" value={p.state} onChange={v=>u("state",v)} options={Object.entries(ST).sort((a,b)=>a[1].n.localeCompare(b[1].n)).map(([k,v])=>[k,`${v.n}${v.t==="0"?" ★":""}`])}/>
         </div>
+
         <div style={{color:C.em,fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Income Sources</div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:20}}>
           <InputField label="W-2 Salary" prefix="$" value={p.salary} onChange={v=>u("salary",v)}/>
-          {multiIncome ? <>
-            <InputField label="Freelance / 1099" prefix="$" value={p.freelance} onChange={v=>u("freelance",v)}/>
-            <InputField label="Rental Income (net)" prefix="$" value={p.rentalNet} onChange={v=>u("rentalNet",v)}/>
-            <InputField label="Dividends" prefix="$" value={p.dividends} onChange={v=>u("dividends",v)}/>
-          </> : <div style={{gridColumn:"1/-1",padding:"12px 16px",background:`${C.emx}0.06)`,border:`1px solid ${C.emx}0.12)`,borderRadius:10}}>
-            <div style={{color:C.em,fontSize:12,fontWeight:600,marginBottom:4}}>🔒 Multiple income sources require Pro</div>
-            <div style={{color:C.t4,fontSize:11.5}}>Add freelance, rental, and dividend income with TaxIQ Pro.</div>
-            <button onClick={onUpgrade} style={{marginTop:8,padding:"8px 14px",borderRadius:7,border:"none",background:C.em,color:C.bg,fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:ff}}>Upgrade — $79/yr</button>
-          </div>}
+          <InputField label="Freelance / 1099" prefix="$" value={p.freelance} onChange={v=>u("freelance",v)}/>
+          <InputField label="Rental Income (net)" prefix="$" value={p.rentalNet} onChange={v=>u("rentalNet",v)}/>
+          <InputField label="Dividends" prefix="$" value={p.dividends} onChange={v=>u("dividends",v)}/>
         </div>
-        {multiIncome && <>
-          <div style={{color:C.em,fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Deductions & Retirement</div>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:20}}>
-            <InputField label="401(k)" prefix="$" value={p.retirement401k} onChange={v=>u("retirement401k",v)}/>
-            <InputField label="IRA" prefix="$" value={p.retirementIRA} onChange={v=>u("retirementIRA",v)}/>
+
+        <div style={{color:C.em,fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Deductions & Retirement</div>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:8}}>
+          <InputField label="401(k)" prefix="$" value={p.retirement401k} onChange={v=>u("retirement401k",v)}/>
+          <InputField label="IRA" prefix="$" value={p.retirementIRA} onChange={v=>u("retirementIRA",v)}/>
+          {isPro ? <>
             <InputField label="Charitable" prefix="$" value={p.charitable} onChange={v=>u("charitable",v)}/>
             <InputField label="Home Office" prefix="$" value={p.homeOffice} onChange={v=>u("homeOffice",v)}/>
-          </div>
-        </>}
+          </> : <div style={{gridColumn:"1/-1",padding:"10px 14px",background:`${C.emx}0.06)`,border:`1px solid ${C.emx}0.12)`,borderRadius:10}}>
+            <div style={{color:C.em,fontSize:12,fontWeight:600}}>⚡ Charitable & home office deductions with Pro</div>
+            <button onClick={onUpgrade} style={{marginTop:6,padding:"6px 14px",borderRadius:7,border:"none",background:C.em,color:C.bg,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:ff}}>Upgrade — $79/yr</button>
+          </div>}
+        </div>
+
+        <div onClick={()=>u("foreign",!p.foreign)} style={{padding:"10px 14px",background:p.foreign?`${C.emx}0.06)`:C.s2,border:`1px solid ${p.foreign?C.em:C.bd}`,borderRadius:10,cursor:"pointer",display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+          <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${p.foreign?C.em:C.t4}`,background:p.foreign?`${C.emx}0.15)`:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{p.foreign&&<span style={{color:C.em,fontSize:10}}>✓</span>}</div>
+          <div><div style={{color:p.foreign?C.t1:C.t3,fontSize:12.5,fontWeight:600}}>Foreign financial accounts</div><div style={{color:C.t4,fontSize:11}}>Triggers FATCA & FBAR compliance checks</div></div>
+        </div>
+
+        {w.length > 0 && <div style={{padding:"10px 14px",background:`${C.yl}10`,border:`1px solid ${C.yl}25`,borderRadius:10,marginBottom:14}}>
+          {w.map((msg,i) => <div key={i} style={{color:C.yl,fontSize:11.5,lineHeight:1.5,display:"flex",gap:6}}><span>⚠️</span><span>{msg}</span></div>)}
+        </div>}
+
         <div style={{display:"flex",gap:10}}>
           <button onClick={onClose} style={{flex:1,padding:"13px",borderRadius:10,border:`1px solid ${C.bd}`,background:"transparent",color:C.t2,cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:ff}}>Cancel</button>
-          <button onClick={()=>{setProfile(p);onClose();}} style={{flex:2,padding:"13px",borderRadius:10,border:"none",background:C.em,color:C.bg,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:ff}}>Save & Recalculate</button>
+          <button onClick={save} style={{flex:2,padding:"13px",borderRadius:10,border:"none",background:C.em,color:C.bg,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:ff}}>Save & Recalculate</button>
         </div>
       </div>
     </div>
@@ -376,13 +416,13 @@ function ProfileModal({ profile, setProfile, onClose, isPro, onUpgrade, isMobile
 function Dashboard({ data, go, profile, isPro, onUpgrade, isMobile }) {
   const { pf, ws, tv, netLT, netST, upl } = data;
   const hasPortfolio = Object.keys(pf).length > 0;
-  const totalIncome = profile.salary + (isPro ? profile.freelance + profile.rentalNet + profile.dividends : 0);
-  const absDed = isPro ? profile.retirement401k + profile.retirementIRA + profile.charitable + profile.homeOffice : 0;
+  const totalIncome = profile.salary + profile.freelance + profile.rentalNet + profile.dividends;
+  const absDed = profile.retirement401k + profile.retirementIRA + (isPro ? profile.charitable + profile.homeOffice : 0);
   const adjInc = Math.max(totalIncome - absDed, 0);
   const lt = Math.max(netLT,0), st = Math.max(netST,0);
   const stTax = calcSt(profile.state, adjInc, lt+st);
   const fed = calcFed(adjInc, lt, st, profile.filing, stTax.tax);
-  const seTax = isPro ? Math.round(profile.freelance*0.9235*0.153) : 0;
+  const seTax = profile.freelance > 0 ? Math.round(profile.freelance*0.9235*0.153) : 0;
   const totalTax = fed.tot + stTax.tax + seTax;
   const takeHome = Math.max(totalIncome - totalTax, 0);
   const hSave = hasPortfolio ? Object.values(pf).flatMap(d=>d.lots.filter(l=>l.unrealized<0)).reduce((s,l)=>s+Math.abs(l.unrealized),0)*fed.marg : 0;
@@ -408,9 +448,9 @@ function Dashboard({ data, go, profile, isPro, onUpgrade, isMobile }) {
   // Income sources for visualization
   const incSrc = [
     profile.salary > 0 && { label: "Salary", amount: profile.salary, color: C.bl },
-    isPro && profile.freelance > 0 && { label: "Freelance", amount: profile.freelance, color: C.pu },
-    isPro && profile.rentalNet > 0 && { label: "Rental", amount: profile.rentalNet, color: C.yl },
-    isPro && profile.dividends > 0 && { label: "Dividends", amount: profile.dividends, color: C.em },
+    profile.freelance > 0 && { label: "Freelance", amount: profile.freelance, color: C.pu },
+    profile.rentalNet > 0 && { label: "Rental", amount: profile.rentalNet, color: C.yl },
+    profile.dividends > 0 && { label: "Dividends", amount: profile.dividends, color: C.em },
   ].filter(Boolean);
 
   // Bracket position
@@ -431,7 +471,7 @@ function Dashboard({ data, go, profile, isPro, onUpgrade, isMobile }) {
         <div style={{display:"flex",gap:isMobile?8:12,justifyContent:"center",marginTop:6,flexWrap:"wrap"}}>
           {taxParts.map((tp,i)=><span key={i} style={{color:C.t3,fontSize:isMobile?11:12}}>{tp.label} <strong style={{color:tp.color,fontFamily:fm}}>${$$(tp.amount)}</strong></span>)}
         </div>
-        {!isPro && totalIncome > 0 && <div style={{marginTop:10}}><button onClick={onUpgrade} style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.emx}0.2)`,background:`${C.emx}0.06)`,color:C.em,fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:ff}}>⚡ Add freelance, rental & dividend income → Upgrade</button></div>}
+        {!isPro && totalTax > 0 && <div style={{marginTop:10}}><button onClick={onUpgrade} style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.emx}0.2)`,background:`${C.emx}0.06)`,color:C.em,fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:ff}}>⚡ See how to lower your tax bill → Upgrade to Pro</button></div>}
       </div>
 
       {/* Stat cards */}
@@ -897,7 +937,7 @@ function PlanAhead({ data, profile, isPro, onUpgrade, isMobile }) {
   const [growth, setGrowth] = useState(12);
   const [projState, setProjState] = useState(profile.state);
   const [strategy, setStrategy] = useState("hold");
-  const totalIncome = profile.salary + (isPro ? profile.freelance + profile.rentalNet : 0);
+  const totalIncome = profile.salary + profile.freelance + profile.rentalNet;
   const realGains = Math.max(data.ltGains + data.stGains, 0);
   const curSt = calcSt(profile.state, totalIncome, realGains);
   const tarSt = calcSt(target, totalIncome, realGains);
@@ -949,7 +989,7 @@ function PlanAhead({ data, profile, isPro, onUpgrade, isMobile }) {
 // ═══════════════════════════════════════════
 // COMPLIANCE (view-only for free)
 // ═══════════════════════════════════════════
-function Compliance({ isPro, onUpgrade, isMobile }) {
+function Compliance({ isPro, onUpgrade, isMobile, profile }) {
   const [open, setOpen] = useState(null);
   const [done, setDone] = useState({});
   const [loaded, setLoaded] = useState(false);
@@ -959,17 +999,38 @@ function Compliance({ isPro, onUpgrade, isMobile }) {
     setDone(prev => { const k=`${fw}-${si}-${ii}`,next={...prev,[k]:!prev[k]}; try{localStorage.setItem("taxiq-compliance",JSON.stringify(next));}catch{} return next; });
   }, [isPro]);
 
+  // Relevance scoring based on profile
+  const totalIncome = profile.salary + profile.freelance + profile.rentalNet + profile.dividends;
+  const relevance = {
+    fatca: profile.foreign ? "applies" : "unlikely",
+    fbar: profile.foreign ? "applies" : "unlikely",
+    est: profile.freelance > 0 || profile.rentalNet > 0 || profile.dividends > 10000 ? "applies" : totalIncome > 150000 ? "review" : "unlikely",
+    forms: "applies", // everyone files
+  };
+  const relLabel = { applies: "Applies to you", review: "Worth reviewing", unlikely: "May not apply" };
+  const relColor = { applies: C.em, review: C.yl, unlikely: C.t4 };
+  const relOrder = { applies: 0, review: 1, unlikely: 2 };
+
+  // Sort: applicable first
+  const sortedEntries = Object.entries(COMPLY_DATA).sort((a, b) => relOrder[relevance[a[0]]] - relOrder[relevance[b[0]]]);
+  const appliesCount = sortedEntries.filter(([k]) => relevance[k] === "applies").length;
+
   return (
     <div style={{padding:isMobile?"16px 16px 80px":"24px 28px",overflowY:"auto",height:"100%"}}>
       <div style={{color:C.t1,fontSize:16,fontWeight:700,marginBottom:4}}>Compliance & Filing</div>
-      <div style={{color:C.t3,fontSize:12,marginBottom:16}}>Check which obligations apply. Missing them can mean steep penalties.</div>
+      <div style={{color:C.t3,fontSize:12,marginBottom:10}}>Based on your profile, we've identified which obligations apply to you.</div>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <Chip color={C.em}>{appliesCount} apply to you</Chip>
+        {profile.foreign && <Chip color={C.yl}>Foreign accounts detected</Chip>}
+        {profile.freelance > 0 && <Chip color={C.pu}>Self-employed</Chip>}
+      </div>
       {!isPro && <div style={{padding:"10px 16px",background:`${C.emx}0.06)`,border:`1px solid ${C.emx}0.12)`,borderRadius:10,marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <span style={{color:C.t2,fontSize:12}}>🔒 Interactive checklists with progress saving require Pro</span>
         <button onClick={onUpgrade} style={{padding:"5px 14px",borderRadius:7,border:"none",background:C.em,color:C.bg,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:ff}}>Upgrade</button>
       </div>}
-      {Object.entries(COMPLY_DATA).map(([key,fw])=>{const isOpen=open===key;const total=fw.steps.reduce((s,st)=>s+st.items.length,0);const completed=fw.steps.reduce((s,st,si)=>s+st.items.filter((_,ii)=>done[`${key}-${si}-${ii}`]).length,0);return(
-        <div key={key} style={{marginBottom:7}}>
-          <Box onClick={()=>setOpen(isOpen?null:key)} style={{cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:19}}>{fw.icon}</span><div style={{flex:1}}><div style={{color:C.t1,fontSize:13,fontWeight:600}}>{fw.nm}</div><div style={{color:C.t3,fontSize:11.5,marginTop:2}}>{fw.trigger}</div></div>{isPro&&completed>0&&<Chip color={completed===total?C.em:C.yl}>{completed}/{total}</Chip>}<span style={{color:C.t4,transition:"transform 0.2s",transform:isOpen?"rotate(180deg)":"none",fontSize:12}}>▾</span></div></Box>
+      {sortedEntries.map(([key,fw])=>{const isOpen=open===key;const total=fw.steps.reduce((s,st)=>s+st.items.length,0);const completed=fw.steps.reduce((s,st,si)=>s+st.items.filter((_,ii)=>done[`${key}-${si}-${ii}`]).length,0);const rel=relevance[key];return(
+        <div key={key} style={{marginBottom:7,opacity:rel==="unlikely"?0.6:1}}>
+          <Box onClick={()=>setOpen(isOpen?null:key)} style={{cursor:"pointer",borderLeft:`3px solid ${relColor[rel]}`}}><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:19}}>{fw.icon}</span><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{color:C.t1,fontSize:13,fontWeight:600}}>{fw.nm}</span><Chip color={relColor[rel]}>{relLabel[rel]}</Chip></div><div style={{color:C.t3,fontSize:11.5,marginTop:2}}>{fw.trigger}</div></div>{isPro&&completed>0&&<Chip color={completed===total?C.em:C.yl}>{completed}/{total}</Chip>}<span style={{color:C.t4,transition:"transform 0.2s",transform:isOpen?"rotate(180deg)":"none",fontSize:12}}>▾</span></div></Box>
           {isOpen&&<Box style={{borderTopLeftRadius:0,borderTopRightRadius:0,marginTop:-1,borderTop:`1px solid ${C.bd}`}}>
             <Chip color={C.rd} style={{marginBottom:10}}>Penalty: {fw.pen}</Chip>
             {fw.steps.map((step,si)=>(<div key={si} style={{marginBottom:10}}><div style={{color:C.em,fontSize:11,fontWeight:700,marginBottom:5}}>Step {si+1}: {step.t}</div>{step.items.map((item,ii)=>{const checked=isPro&&done[`${key}-${si}-${ii}`];return(<div key={ii} onClick={()=>toggle(key,si,ii)} style={{display:"flex",alignItems:"flex-start",gap:9,padding:"4px 0",cursor:isPro?"pointer":"default",opacity:isPro?1:0.7}}>
@@ -1026,10 +1087,113 @@ function Ask({ profile, data, isPro, onUpgrade, isMobile }) {
     try { localStorage.setItem("taxiq-ai-usage", JSON.stringify({ month: currentMonth, count: newCount })); } catch {}
   };
 
-  const profileCtx = `User: Filing ${profile.filing}, ${ST[profile.state]?.n}. W-2: $${$$(profile.salary)}, Freelance: $${$$(profile.freelance)}, Rental: $${$$(profile.rentalNet)}, Dividends: $${$$(profile.dividends)}. Portfolio: $${$$(data.tv)}. LT gains: $${$$(data.ltGains)}, ST gains: $${$$(data.stGains)}. Marginal rate: ${pct(calcFed(profile.salary+profile.freelance,0,0,profile.filing,0).marg)}.`;
+  // ═══ DEEP CONTEXT ENGINE ═══
+  // Mirror the same calculations as Dashboard, SaveMoney, Compliance
+  const totalIncome = profile.salary + profile.freelance + profile.rentalNet + profile.dividends;
+  const absDed = profile.retirement401k + profile.retirementIRA;
+  const adjInc = Math.max(totalIncome - absDed, 0);
+  const stTax = calcSt(profile.state, adjInc, Math.max(data.ltGains,0)+Math.max(data.stGains,0));
+  const fed = calcFed(adjInc, Math.max(data.ltGains,0), Math.max(data.stGains,0), profile.filing, stTax.tax);
+  const seTax = profile.freelance > 0 ? Math.round(profile.freelance*0.9235*0.153) : 0;
+  const totalTax = fed.tot + stTax.tax + seTax;
+  const takeHome = Math.max(totalIncome - totalTax, 0);
+  const effRate = totalIncome > 0 ? totalTax / totalIncome : 0;
+  const sd = STD_DED[profile.filing] || 14600;
+
+  // Bracket position
+  const bks = FED_BRACKETS[profile.filing] || FED_BRACKETS.single;
+  const taxableOrd = Math.max(adjInc - sd, 0);
+  let bFloor=0,bCeil=0,curRate=0,cumul=0;
+  for(const[width,rate]of bks){if(taxableOrd<=cumul+width){bFloor=cumul;bCeil=cumul+width;curRate=rate;break;}cumul+=width;}
+  const bPct = bCeil>bFloor ? Math.round(((taxableOrd-bFloor)/(bCeil-bFloor))*100) : 0;
+
+  // Deduction gaps
+  const max401k=23000, maxIRA=7000, maxHSA=profile.filing==="mfj"?8300:4150;
+  const qbiAmount = profile.freelance>0 ? Math.round(profile.freelance*0.2) : 0;
+  const halfSE = profile.freelance>0 ? Math.round(profile.freelance*0.9235*0.153/2) : 0;
+  const maxDed = max401k + maxIRA + maxHSA + qbiAmount;
+  const usedDed = profile.retirement401k + profile.retirementIRA;
+  const efficiency = maxDed>0 ? Math.min(Math.round((usedDed/maxDed)*100),100) : 0;
+  const missedSave = Math.round((maxDed-usedDed)*fed.marg);
+  const gap401k = Math.max(max401k - profile.retirement401k, 0);
+  const gapIRA = Math.max(maxIRA - profile.retirementIRA, 0);
+
+  // SALT analysis
+  const saltOver = stTax.tax > SALT_CAP ? stTax.tax - SALT_CAP : 0;
+
+  // Compliance
+  const needsFATCA = profile.foreign;
+  const needsFBAR = profile.foreign;
+  const needsEstimated = profile.freelance>0||profile.rentalNet>0||profile.dividends>10000;
+
+  // State comparison — best zero-tax state savings
+  const zeroTaxSavings = stTax.tax > 0 ? stTax.tax : 0;
+
+  // Build the deep context string
+  const deepCtx = [
+    `=== USER TAX PROFILE ===`,
+    `Filing: ${profile.filing==="mfj"?"Married Filing Jointly":profile.filing==="mfs"?"Married Filing Separately":profile.filing==="hoh"?"Head of Household":"Single"}`,
+    `State: ${ST[profile.state]?.n} (${ST[profile.state]?.t==="0"?"no income tax":stTax.tax>0?"$"+$$(stTax.tax)+" state tax":"$0 state tax"})`,
+    ``,
+    `=== INCOME ===`,
+    `Total income: $${$$(totalIncome)}`,
+    profile.salary>0 && `  W-2 salary: $${$$(profile.salary)}`,
+    profile.freelance>0 && `  Freelance/1099: $${$$(profile.freelance)} (SE tax: $${$$(seTax)})`,
+    profile.rentalNet>0 && `  Rental income (net): $${$$(profile.rentalNet)}`,
+    profile.rentalNet<0 && `  Rental loss: -$${$$(Math.abs(profile.rentalNet))}`,
+    profile.dividends>0 && `  Dividends: $${$$(profile.dividends)}`,
+    ``,
+    `=== TAX CALCULATION (computed by TaxIQ) ===`,
+    `Total tax liability: $${$$(totalTax)}`,
+    `  Federal income tax: $${$$(fed.inc)}`,
+    fed.lt>0 && `  Capital gains tax: $${$$(fed.lt)}`,
+    stTax.tax>0 && `  State tax (${ST[profile.state]?.n}): $${$$(stTax.tax)}`,
+    seTax>0 && `  Self-employment tax: $${$$(seTax)}`,
+    fed.niit>0 && `  NIIT (3.8%): $${$$(fed.niit)}`,
+    `Effective tax rate: ${pct(effRate)}`,
+    `Marginal rate: ${pct(fed.marg)} (federal)`,
+    `Take-home pay: $${$$(takeHome)}`,
+    `Monthly tax burden: $${$$(Math.round(totalTax/12))}`,
+    ``,
+    `=== BRACKET POSITION ===`,
+    `Currently in the ${pct(curRate)} bracket`,
+    `${bPct}% through this bracket ($${$$(taxableOrd)} taxable / $${$$(bCeil)} ceiling)`,
+    bCeil-taxableOrd<15000 && `⚠ Only $${$$(bCeil-taxableOrd)} from the next bracket — deductions are high-leverage here`,
+    `Standard deduction: $${$$(sd)}`,
+    ``,
+    `=== DEDUCTION ANALYSIS ===`,
+    `Tax efficiency score: ${efficiency}% (using $${$$(usedDed)} of $${$$(maxDed)} available deductions)`,
+    missedSave>200 && `💰 Missed savings: $${$$(missedSave)} — this is how much less tax they'd pay using all available deductions`,
+    `Current 401(k): $${$$(profile.retirement401k)} / $${$$(max401k)} max${gap401k>0?` → gap of $${$$(gap401k)} (saves $${$$(Math.round(gap401k*fed.marg))})`:" ✓ maxed"}`,
+    `Current IRA: $${$$(profile.retirementIRA)} / $${$$(maxIRA)} max${gapIRA>0?` → gap of $${$$(gapIRA)} (saves $${$$(Math.round(gapIRA*fed.marg))})`:" ✓ maxed"}`,
+    `HSA: not tracked yet → potential $${$$(maxHSA)} deduction (saves $${$$(Math.round(maxHSA*fed.marg))})`,
+    qbiAmount>0 && `QBI deduction (§199A): $${$$(qbiAmount)} automatic (saves $${$$(Math.round(qbiAmount*fed.marg))})`,
+    halfSE>0 && `½ SE tax deduction: $${$$(halfSE)} automatic (saves $${$$(Math.round(halfSE*fed.marg))})`,
+    saltOver>0 && `⚠ SALT cap exceeded by $${$$(saltOver)} — $${$$(saltOver)} in state tax is NOT deductible`,
+    ``,
+    `=== COMPLIANCE ===`,
+    needsFATCA && `FATCA (Form 8938): APPLIES — user has foreign financial accounts`,
+    needsFBAR && `FBAR (FinCEN 114): APPLIES — user has foreign accounts`,
+    needsEstimated && `Estimated tax payments: APPLIES — has non-withheld income`,
+    !needsFATCA && `FATCA/FBAR: Does not apply (no foreign accounts)`,
+    !needsEstimated && `Estimated payments: Likely not required`,
+    profile.freelance>0 && `Schedule C: Required for freelance income`,
+    profile.rentalNet!==0 && `Schedule E: Required for rental income`,
+    ``,
+    `=== STATE ANALYSIS ===`,
+    zeroTaxSavings>0 && `Moving to a zero-income-tax state would save $${$$(zeroTaxSavings)}/year`,
+    zeroTaxSavings===0 && `Already in a zero-income-tax state`,
+    ``,
+    `=== PORTFOLIO ===`,
+    data.tv>0 ? `Portfolio value: $${$$(data.tv)}` : `No portfolio data connected`,
+    data.ltGains>0 && `Long-term gains: $${$$(data.ltGains)}`,
+    data.stGains>0 && `Short-term gains: $${$$(data.stGains)}`,
+  ].filter(Boolean).join("\n");
+
   const SYS = mode==="a"
-    ?`You are TaxIQ, a personalized AI tax advisor. ${profileCtx}\n\nGive specific, risk-rated recommendations. Structure: plain English → recommendation (🟢 LOW / 🟡 MODERATE / 🔴 HIGH risk) → action items → caveats. Suggest CPA for implementation. Always include a disclaimer that this is informational only and not professional tax advice.`
-    :`You are TaxIQ, an AI tax research assistant. ${profileCtx}\n\nAnswer in plain English. Cite IRC sections when helpful. Cover: federal, 50 states, capital gains, SE tax, retirement, deductions, FATCA, CRS, FBAR. Always note this is informational only.`;
+    ?`You are TaxIQ, an AI tax advisor embedded in a tax calculation app. You have access to this user's complete tax analysis, pre-computed by TaxIQ's engine. Use these SPECIFIC numbers in your answers — never guess or approximate when the data is provided.\n\n${deepCtx}\n\n## INSTRUCTIONS\n- Lead with the most impactful finding (biggest savings opportunity, biggest risk)\n- Use exact dollar amounts from the analysis above — this is what makes you different from a generic AI\n- Rate recommendations: 🟢 LOW risk (standard, well-established) / 🟡 MODERATE risk (depends on situation) / 🔴 HIGH risk (aggressive, needs CPA)\n- Give specific action items, not generic advice\n- When relevant, reference which TaxIQ tab has more detail (Save Money, Plan Ahead, Compliance)\n- Always note: "This is informational only — not professional tax advice. Consult a CPA for implementation."`
+    :`You are TaxIQ, an AI tax research assistant embedded in a tax calculation app. You have the user's tax profile for context.\n\n${deepCtx}\n\n## INSTRUCTIONS\n- Answer tax questions in plain English\n- Cite IRC sections when helpful\n- If the question relates to something in their profile, reference their specific numbers\n- Cover: federal, 50 states, capital gains, SE tax, retirement, deductions, crypto, FATCA, CRS, FBAR\n- Always note: "This is informational only — not professional tax advice."`;
+
 
   const send = async (text) => {
     if (!text.trim()||ld) return;
@@ -1068,8 +1232,18 @@ function Ask({ profile, data, isPro, onUpgrade, isMobile }) {
   };
 
   const prompts = mode==="a"
-    ?["Based on my profile, what should I prioritize?","Should I form an S-Corp?","Does a Roth conversion make sense?","How can I lower my effective tax rate?"]
-    :["What's the QBI deduction?","How are staking rewards taxed?","Which states have no income tax?","Explain the wash sale rule for crypto"];
+    ?[
+      "What's the single biggest thing I should do to lower my tax bill?",
+      missedSave>500 ? `How do I save that $${$$(missedSave)} in missed deductions?` : "Should I form an S-Corp?",
+      profile.freelance>0 ? "Am I paying too much in self-employment tax?" : "Does a Roth conversion make sense for me?",
+      efficiency<50 ? "Help me build a plan to maximize my deductions" : "What tax strategies should I consider for next year?",
+    ]
+    :[
+      "What's the QBI deduction and do I qualify?",
+      "How are staking rewards taxed?",
+      "Explain the wash sale rule for crypto",
+      "What forms do I need to file?",
+    ];
   const atLimit = !isPro && qUsed >= FREE_LIMIT;
   const now = new Date();
   const daysLeft = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
@@ -1398,7 +1572,7 @@ export default function TaxIQ() {
           ))}
         </div>
         {sbOpen&&<div style={{padding:"8px 14px",borderTop:`1px solid ${C.bd}`,fontSize:10.5}}>
-          <Row l="Income" r={`$${$$(profile.salary+(isPro?profile.freelance+profile.rentalNet+profile.dividends:0))}`} color={C.em}/><Row l="State" r={ST[profile.state]?.n||""} color={C.t3} sub/>
+          <Row l="Income" r={`$${$$(profile.salary+profile.freelance+profile.rentalNet+profile.dividends)}`} color={C.em}/><Row l="State" r={ST[profile.state]?.n||""} color={C.t3} sub/>
           <div style={{display:"flex",gap:4,marginTop:6}}>
             <button onClick={()=>setShowProfile(true)} style={{flex:1,padding:"6px",borderRadius:6,border:`1px solid ${C.bd}`,background:"transparent",color:C.t3,cursor:"pointer",fontSize:10,fontFamily:ff}}>✏️ Profile</button>
             {isPro?<select value={costMethod} onChange={e=>setCostMethod(e.target.value)} style={{flex:1,padding:"6px",borderRadius:6,border:`1px solid ${C.bd}`,background:"transparent",color:C.t3,fontSize:10,fontFamily:ff}}><option value="fifo">FIFO</option><option value="lifo">LIFO</option><option value="hifo">HIFO</option></select>
@@ -1424,7 +1598,7 @@ export default function TaxIQ() {
           {tab==="dash"&&<Dashboard data={data} go={setTab} profile={profile} isPro={isPro} onUpgrade={openUpgrade} isMobile={isMobile}/>}
           {tab==="save"&&<SaveMoney data={data} profile={profile} isPro={isPro} onUpgrade={openUpgrade} isMobile={isMobile}/>}
           {tab==="plan"&&<PlanAhead data={data} profile={profile} isPro={isPro} onUpgrade={openUpgrade} isMobile={isMobile}/>}
-          {tab==="comply"&&<Compliance isPro={isPro} onUpgrade={openUpgrade} isMobile={isMobile}/>}
+          {tab==="comply"&&<Compliance isPro={isPro} onUpgrade={openUpgrade} isMobile={isMobile} profile={profile}/>}
           {tab==="ask"&&<Ask profile={profile} data={data} isPro={isPro} onUpgrade={openUpgrade} isMobile={isMobile}/>}
         </div>
         {!isMobile && <div style={{padding:"6px 20px",borderTop:`1px solid ${C.bd}`,background:C.s1,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
