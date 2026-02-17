@@ -219,6 +219,22 @@ const ST = {
   WY:{n:"Wyoming",t:"0",cg:"0",nt:"No tax"},
   DC:{n:"Washington D.C.",t:"p",b:[[10000,.04],[40000,.06],[60000,.065],[250000,.085],[500000,.0925],[1000000,.0975],[1e12,.1075]],d:14600,cg:"o"},
 };
+// Sales tax rates (state, excludes local) and avg effective property tax rates
+const STX = {
+  AL:{s:4.0,p:0.40},AK:{s:0,p:1.04},AZ:{s:5.6,p:0.62},AR:{s:6.5,p:0.62},
+  CA:{s:7.25,p:0.71},CO:{s:2.9,p:0.49},CT:{s:6.35,p:2.15},DE:{s:0,p:0.59},
+  FL:{s:6.0,p:0.86},GA:{s:4.0,p:0.87},HI:{s:4.0,p:0.32},ID:{s:6.0,p:0.63},
+  IL:{s:6.25,p:2.08},IN:{s:7.0,p:0.81},IA:{s:6.0,p:1.52},KS:{s:6.5,p:1.33},
+  KY:{s:6.0,p:0.83},LA:{s:4.45,p:0.56},ME:{s:5.5,p:1.24},MD:{s:6.0,p:1.06},
+  MA:{s:6.25,p:1.17},MI:{s:6.0,p:1.38},MN:{s:6.875,p:1.08},MS:{s:7.0,p:0.67},
+  MO:{s:4.225,p:0.93},MT:{s:0,p:0.74},NE:{s:5.5,p:1.65},NV:{s:6.85,p:0.53},
+  NH:{s:0,p:1.93},NJ:{s:6.625,p:2.23},NM:{s:4.875,p:0.67},NY:{s:4.0,p:1.72},
+  NC:{s:4.75,p:0.80},ND:{s:5.0,p:0.98},OH:{s:5.75,p:1.53},OK:{s:4.5,p:0.87},
+  OR:{s:0,p:0.87},PA:{s:6.0,p:1.49},RI:{s:7.0,p:1.53},SC:{s:6.0,p:0.55},
+  SD:{s:4.2,p:1.22},TN:{s:7.0,p:0.64},TX:{s:6.25,p:1.68},UT:{s:6.1,p:0.58},
+  VT:{s:6.0,p:1.90},VA:{s:5.3,p:0.82},WA:{s:6.5,p:0.94},WV:{s:6.0,p:0.57},
+  WI:{s:5.0,p:1.68},WY:{s:4.0,p:0.56},DC:{s:6.0,p:0.57},
+};
 function calcSt(code, inc, gains = 0) {
   const s = ST[code]; if (!s || s.t === "0") return { tax: 0, eff: 0 };
   if (s.t === "cg") { const t = gains > (s.cgTh||0) ? (gains-(s.cgTh||0))*s.r : 0; return { tax: Math.round(t), eff: (inc+gains)>0?(t/(inc+gains)*100):0 }; }
@@ -318,7 +334,24 @@ const COMPLY_DATA = {
   est:{nm:"Estimated Tax Payments",icon:"📅",trigger:"Expect to owe $1,000+ when filing",pen:"Underpayment penalty + interest",steps:[{t:"Check if required",items:["Income not subject to withholding","Expected tax owed > $1,000 after withholding","Safe harbor: 100% prior year (110% if AGI > $150K)"]},{t:"Pay quarterly",items:["Q1: Apr 15 • Q2: Jun 15 • Q3: Sep 15 • Q4: Jan 15","Use Form 1040-ES worksheet","Pay via IRS Direct Pay or EFTPS"]}]},
   forms:{nm:"Filing Requirements",icon:"📄",trigger:"Which forms do you need?",pen:"Late filing: 5%/month up to 25%",steps:[{t:"Core returns",items:["Form 1040 — Individual return","Schedule C — Freelance/business income","Schedule D + Form 8949 — Capital gains","Schedule E — Rental income"]},{t:"If applicable",items:["Form 8938 — Foreign assets (FATCA)","Form 8829 — Home office deduction","Form 4868 — Extension request"]}]},
 };
-const INTL = [{f:"🇺🇸",n:"United States",lt:"0/15/20%",cr:"Property"},{f:"🇬🇧",n:"United Kingdom",lt:"18/24%",cr:"CGT asset"},{f:"🇩🇪",n:"Germany",lt:"0% >1yr",cr:"Crypto 0% if >1yr"},{f:"🇸🇬",n:"Singapore",lt:"0%",cr:"No CGT"},{f:"🇦🇪",n:"UAE",lt:"0%",cr:"0% personal"},{f:"🇨🇭",n:"Switzerland",lt:"0%",cr:"Wealth tax"},{f:"🇵🇹",n:"Portugal",lt:"0% >365d",cr:"Crypto 0%"},{f:"🇯🇵",n:"Japan",lt:"15-55%",cr:"Misc income"},{f:"🇦🇺",n:"Australia",lt:"~22.5%",cr:"50% disc"},{f:"🇨🇦",n:"Canada",lt:"~25%",cr:"50% inclusion"}];
+const INTL = [
+  {f:"🇺🇸",n:"United States",cg:"0/15/20%",crypto:"Same as property",inc:i=>0,note:"Your current rate",home:true,col:1.0,nomad:false},
+  {f:"🇬🇧",n:"United Kingdom",cg:"18/24%",crypto:"Capital gains tax",inc:i=>i<=12570?0:i<=50270?(i-12570)*0.2:i<=125140?(i-50270)*0.4+7540:(i-125140)*0.45+37430+7540,note:"NHS funded by tax",col:0.85,nomad:false},
+  {f:"🇩🇪",n:"Germany",cg:"0% if held >1yr",crypto:"0% after 1yr hold",inc:i=>i<=11604?0:i<=62810?(i-11604)*0.30:(i-62810)*0.42+(62810-11604)*0.30,note:"Crypto tax-free after 1yr",col:0.75,nomad:false},
+  {f:"🇨🇦",n:"Canada",cg:"25% inclusion",crypto:"50% taxable",inc:i=>i<=55867?i*0.15:i<=111733?55867*0.15+(i-55867)*0.205:i<=154906?55867*0.15+55866*0.205+(i-111733)*0.26:i*0.29,note:"Capital gains: only 50% taxable",col:0.82,nomad:false},
+  {f:"🇦🇺",n:"Australia",cg:"50% CGT discount",crypto:"Capital gains",inc:i=>i<=18200?0:i<=45000?(i-18200)*0.19:i<=120000?(i-45000)*0.325+5092:i<=180000?(i-120000)*0.37+29467:(i-180000)*0.45+51667,note:"50% CGT discount if held >1yr",col:0.80,nomad:false},
+  {f:"🇯🇵",n:"Japan",cg:"15-55%",crypto:"Misc income (up to 55%)",inc:i=>i<=1950000?i*0.05:i<=3300000?97500+(i-1950000)*0.10:i<=6950000?232500+(i-3300000)*0.20:i<=9000000?962500+(i-6950000)*0.23:i*0.33,note:"Crypto taxed as misc income",col:0.62,nomad:false},
+  {f:"🇸🇬",n:"Singapore",cg:"0%",crypto:"No capital gains tax",inc:i=>i<=20000?0:i<=40000?(i-20000)*0.02:i<=80000?400+(i-40000)*0.07:i<=120000?3200+(i-80000)*0.115:i<=160000?7800+(i-120000)*0.15:i*0.18,note:"No capital gains tax at all",col:0.85,nomad:false},
+  {f:"🇦🇪",n:"UAE",cg:"0%",crypto:"0% personal tax",inc:()=>0,note:"Zero personal income tax",col:0.78,nomad:true},
+  {f:"🇵🇹",n:"Portugal",cg:"28% (or 0% NHR)",crypto:"0% if held >365d",inc:i=>i<=7703?i*0.1325:i<=11623?(i-7703)*0.18+1021:i<=16472?(i-11623)*0.23+1726:i<=25075?(i-16472)*0.26+2841:i<=39967?(i-25075)*0.3275+5078:i*0.37,note:"NHR regime: 0% on crypto",col:0.52,nomad:true},
+  {f:"🇨🇭",n:"Switzerland",cg:"0%",crypto:"No CGT (wealth tax)",inc:i=>i<=14500?0:i<=31600?(i-14500)*0.0077:i<=41400?132+(i-31600)*0.0088:i<=55200?218+(i-41400)*0.0275:i<=72500?597+(i-55200)*0.0308:i*0.04,note:"Federal only — cantonal varies",col:1.30,nomad:false},
+  {f:"🇨🇷",n:"Costa Rica",cg:"0%",crypto:"Not taxed currently",inc:i=>i<=4296000/600?0:i<=6444000/600?(i-4296000/600)*0.10:(i-6444000/600)*0.15+(6444000/600-4296000/600)*0.10,note:"Territorial tax — foreign income exempt",col:0.42,nomad:true},
+  {f:"🇲🇽",n:"Mexico",cg:"10% (stocks)",crypto:"Property — up to 35%",inc:i=>i<=8952?i*0.0192:i<=75985?172+(i-8952)*0.17:i<=133537?11572+(i-75985)*0.21:i<=155229?23699+(i-133537)*0.2352:(i-155229)*0.30+28791,note:"Temp resident tax benefits available",col:0.38,nomad:true},
+  {f:"🇲🇾",n:"Malaysia",cg:"0%",crypto:"No capital gains tax",inc:i=>i<=5000?0:i<=20000?(i-5000)*0.01:i<=35000?150+(i-20000)*0.03:i<=50000?600+(i-35000)*0.06:i<=70000?1500+(i-50000)*0.11:i*0.19,note:"MM2H visa for digital nomads",col:0.35,nomad:true},
+  {f:"🇹🇭",n:"Thailand",cg:"15%",crypto:"15% on gains",inc:i=>i<=5000?0:i<=15000?(i-5000)*0.05:i<=25000?500+(i-15000)*0.10:i<=50000?1500+(i-25000)*0.15:i<=75000?5250+(i-50000)*0.20:i*0.25,note:"LTR visa: 17% flat rate for remote workers",col:0.36,nomad:true},
+  {f:"🇪🇪",n:"Estonia",cg:"0% retained",crypto:"20% on distribution",inc:i=>Math.round(i*0.20),note:"e-Residency for digital businesses",col:0.55,nomad:true},
+  {f:"🇬🇪",n:"Georgia",cg:"0% for individuals",crypto:"Not taxed",inc:i=>Math.round(i*0.20),note:"1% small business tax available",col:0.30,nomad:true},
+];
 
 // ═══════════════════════════════════════════
 // PROFILE EDITOR
@@ -931,28 +964,42 @@ function SaveMoney({ data, profile, isPro, onUpgrade, isMobile }) {
 // PLAN AHEAD (gated: comparison free, proj pro)
 // ═══════════════════════════════════════════
 function PlanAhead({ data, profile, isPro, onUpgrade, isMobile }) {
-  const { tv } = data;
   const [sub, setSub] = useState("states");
   const [target, setTarget] = useState("TX");
-  const [growth, setGrowth] = useState(12);
+  const [growth, setGrowth] = useState(5);
   const [projState, setProjState] = useState(profile.state);
-  const [strategy, setStrategy] = useState("hold");
+  const [strategy, setStrategy] = useState("base");
+  const [homeValue, setHomeValue] = useState(350000);
   const totalIncome = profile.salary + profile.freelance + profile.rentalNet;
   const realGains = Math.max(data.ltGains + data.stGains, 0);
   const curSt = calcSt(profile.state, totalIncome, realGains);
   const tarSt = calcSt(target, totalIncome, realGains);
 
   const proj = useMemo(() => {
-    let pv = tv;
-    return [2026,2027,2028].map(yr => {
-      pv *= (1+growth/100); const gains = strategy==="sell"?pv*0.15:strategy==="harvest"?-(pv*0.04):0;
-      const lt = Math.max(gains,0); const stT = calcSt(projState, totalIncome, lt);
-      const f = calcFed(totalIncome, lt, 0, profile.filing, stT.tax);
-      const se = Math.round(profile.freelance*0.9235*0.153);
-      const harv = strategy==="harvest"?Math.round(Math.abs(gains)*f.marg):0;
-      return { yr, pv:Math.round(pv), fed:f.tot, st:stT.tax, se, total:f.tot+stT.tax+se-harv };
+    return [2026,2027,2028].map((yr,i) => {
+      const yrs = i+1;
+      const salary = Math.round(profile.salary * Math.pow(1+growth/100, yrs));
+      const freelance = Math.round(profile.freelance * Math.pow(1+growth/100, yrs));
+      const rental = profile.rentalNet;
+      const divs = profile.dividends;
+      const inc = salary + freelance + rental + divs;
+      let ded401k = profile.retirement401k, dedIRA = profile.retirementIRA;
+      let seInc = freelance;
+      if (strategy === "max") { ded401k = 23000; dedIRA = 7000; }
+      if (strategy === "scorp") { seInc = Math.round(freelance * 0.6); }
+      const adjInc = Math.max(inc - ded401k - dedIRA, 0);
+      const stT = calcSt(projState, adjInc, 0);
+      const f = calcFed(adjInc, 0, 0, profile.filing, stT.tax);
+      const se = seInc > 0 ? Math.round(seInc*0.9235*0.153) : 0;
+      const total = f.tot + stT.tax + se;
+      const baseAdj = Math.max(inc - profile.retirement401k - profile.retirementIRA, 0);
+      const baseSt = calcSt(projState, baseAdj, 0);
+      const baseF = calcFed(baseAdj, 0, 0, profile.filing, baseSt.tax);
+      const baseSE = freelance > 0 ? Math.round(freelance*0.9235*0.153) : 0;
+      const baseTotal = baseF.tot + baseSt.tax + baseSE;
+      return { yr, inc, fed:f.tot, st:stT.tax, se, total, saved: strategy!=="base" ? Math.max(baseTotal-total,0) : 0 };
     });
-  }, [tv,growth,totalIncome,projState,strategy,profile.filing,profile.freelance]);
+  }, [growth,projState,strategy,profile]);
 
   return (
     <div style={{padding:isMobile?"16px 16px 80px":"24px 28px",overflowY:"auto",height:"100%"}}>
@@ -962,24 +1009,136 @@ function PlanAhead({ data, profile, isPro, onUpgrade, isMobile }) {
         <Box style={{marginBottom:14,padding:isMobile?16:22,textAlign:"center"}}>
           <div style={{color:C.t3,fontSize:12.5,marginBottom:8}}>Moving from <strong style={{color:C.t1}}>{ST[profile.state]?.n}</strong> to</div>
           <select value={target} onChange={e=>setTarget(e.target.value)} style={{background:C.s1,border:`1px solid ${C.bd}`,borderRadius:10,padding:"10px 16px",color:C.t1,fontSize:15,fontWeight:600,fontFamily:ff,outline:"none",marginBottom:12}}>{Object.entries(ST).filter(([c])=>c!==profile.state).sort((a,b)=>a[1].n.localeCompare(b[1].n)).map(([k,v])=><option key={k} value={k}>{v.n}{v.t==="0"?" ★":""}</option>)}</select>
-          {curSt.tax-tarSt.tax>0?<><div style={{color:C.em,fontSize:40,fontWeight:700,fontFamily:fm}}>${$$(curSt.tax-tarSt.tax)}</div><div style={{color:C.t3,fontSize:12.5,marginTop:4}}>saved per year</div><div style={{display:"flex",justifyContent:"center",gap:24,marginTop:12}}><div><div style={{color:C.rd,fontSize:17,fontWeight:700,fontFamily:fm}}>${$$(curSt.tax)}</div><div style={{color:C.t3,fontSize:10.5}}>{ST[profile.state]?.n}</div></div><span style={{color:C.t4,fontSize:17}}>→</span><div><div style={{color:C.em,fontSize:17,fontWeight:700,fontFamily:fm}}>${$$(tarSt.tax)}</div><div style={{color:C.t3,fontSize:10.5}}>{ST[target]?.n}</div></div></div></>:<div style={{color:C.yl,fontSize:14,fontWeight:600}}>No savings</div>}
+          {curSt.tax-tarSt.tax>0?<><div style={{color:C.em,fontSize:40,fontWeight:700,fontFamily:fm}}>${$$(curSt.tax-tarSt.tax)}</div><div style={{color:C.t3,fontSize:12.5,marginTop:4}}>income tax saved per year</div></>:<curSt.tax===tarSt.tax?<div style={{color:C.t4,fontSize:14,fontWeight:600}}>Same income tax</div>:<div style={{color:C.rd,fontSize:14,fontWeight:600}}>+${$$(tarSt.tax-curSt.tax)} more in income tax</div>}
         </Box>
-        <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginBottom:6}}>Zero-tax states</div>
+
+        {/* Assumptions */}
+        <Box style={{marginBottom:10,padding:"12px 16px"}}>
+          <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginBottom:10}}>Adjust assumptions</div>
+          <Slider label="Home Value" value={homeValue} onChange={setHomeValue} min={100000} max={1500000} step={25000} fmt={v=>`$${$$(v)}`} color={C.yl}/>
+        </Box>
+
+        {/* Multi-factor comparison */}
+        {(()=>{
+          const curX = STX[profile.state]||{s:0,p:0}, tarX = STX[target]||{s:0,p:0};
+          const curProp = Math.round(homeValue * curX.p / 100);
+          const tarProp = Math.round(homeValue * tarX.p / 100);
+          const spendEstimate = Math.min(totalIncome * 0.35, 60000); // ~35% of income on taxable goods
+          const curSales = Math.round(spendEstimate * curX.s / 100);
+          const tarSales = Math.round(spendEstimate * tarX.s / 100);
+          const curTotal = curSt.tax + curProp + curSales;
+          const tarTotal = tarSt.tax + tarProp + tarSales;
+          const netDiff = curTotal - tarTotal;
+          const maxBar = Math.max(curTotal, tarTotal, 1);
+          return <>
+            <Box style={{marginBottom:10}}>
+              <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginBottom:10}}>Full state tax burden comparison</div>
+              {/* Current state bar */}
+              <div style={{marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{color:C.t1,fontSize:12,fontWeight:600}}>{ST[profile.state]?.n}</span>
+                  <span style={{color:C.rd,fontSize:13,fontWeight:700,fontFamily:fm}}>${$$(curTotal)}/yr</span>
+                </div>
+                <div style={{display:"flex",height:8,borderRadius:4,overflow:"hidden",background:C.s3}}>
+                  <div style={{width:`${(curSt.tax/maxBar)*100}%`,background:C.bl}} title="Income tax"/>
+                  <div style={{width:`${(curProp/maxBar)*100}%`,background:C.yl}} title="Property tax"/>
+                  <div style={{width:`${(curSales/maxBar)*100}%`,background:C.pu}} title="Sales tax"/>
+                </div>
+              </div>
+              {/* Target state bar */}
+              <div style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{color:C.t1,fontSize:12,fontWeight:600}}>{ST[target]?.n}</span>
+                  <span style={{color:tarTotal<curTotal?C.em:C.t1,fontSize:13,fontWeight:700,fontFamily:fm}}>${$$(tarTotal)}/yr</span>
+                </div>
+                <div style={{display:"flex",height:8,borderRadius:4,overflow:"hidden",background:C.s3}}>
+                  <div style={{width:`${(tarSt.tax/maxBar)*100}%`,background:C.bl}} title="Income tax"/>
+                  <div style={{width:`${(tarProp/maxBar)*100}%`,background:C.yl}} title="Property tax"/>
+                  <div style={{width:`${(tarSales/maxBar)*100}%`,background:C.pu}} title="Sales tax"/>
+                </div>
+              </div>
+              {/* Legend */}
+              <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                <span style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:C.t3}}><div style={{width:8,height:8,borderRadius:1,background:C.bl}}/> Income tax</span>
+                <span style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:C.t3}}><div style={{width:8,height:8,borderRadius:1,background:C.yl}}/> Property tax</span>
+                <span style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:C.t3}}><div style={{width:8,height:8,borderRadius:1,background:C.pu}}/> Sales tax</span>
+              </div>
+            </Box>
+
+            {/* Breakdown table */}
+            <Box style={{marginBottom:10,padding:0}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"10px 14px",borderBottom:`1px solid ${C.bd}`}}>
+                <span style={{color:C.t4,fontSize:10,fontWeight:600,textTransform:"uppercase"}}></span>
+                <span style={{color:C.t3,fontSize:10,fontWeight:600,textTransform:"uppercase",textAlign:"right"}}>{ST[profile.state]?.n?.split(" ").map(w=>w[0]).join("")||profile.state}</span>
+                <span style={{color:C.t3,fontSize:10,fontWeight:600,textTransform:"uppercase",textAlign:"right"}}>{ST[target]?.n?.split(" ").map(w=>w[0]).join("")||target}</span>
+              </div>
+              {[
+                ["Income Tax",curSt.tax,tarSt.tax],
+                [`Property Tax`,curProp,tarProp],
+                [`Sales Tax`,curSales,tarSales],
+              ].map(([label,cur,tar],i)=>(<div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"8px 14px",borderBottom:`1px solid ${C.bd}`}}>
+                <span style={{color:C.t2,fontSize:12}}>{label}</span>
+                <span style={{color:C.t1,fontSize:12,fontFamily:fm,textAlign:"right"}}>${$$(cur)}</span>
+                <span style={{color:tar<cur?C.em:tar>cur?C.rd:C.t1,fontSize:12,fontFamily:fm,textAlign:"right"}}>${$$(tar)}</span>
+              </div>))}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"10px 14px"}}>
+                <span style={{color:C.t1,fontSize:12,fontWeight:700}}>Total</span>
+                <span style={{color:C.t1,fontSize:13,fontWeight:700,fontFamily:fm,textAlign:"right"}}>${$$(curTotal)}</span>
+                <span style={{color:tarTotal<curTotal?C.em:C.t1,fontSize:13,fontWeight:700,fontFamily:fm,textAlign:"right"}}>${$$(tarTotal)}</span>
+              </div>
+            </Box>
+
+            {/* Net summary */}
+            <Box style={{textAlign:"center",padding:16,borderLeft:`3px solid ${netDiff>0?C.em:netDiff<0?C.rd:C.t4}`}}>
+              {netDiff>500 ? <><div style={{color:C.em,fontSize:20,fontWeight:700,fontFamily:fm}}>${$$(netDiff)}</div><div style={{color:C.t3,fontSize:12}}>total estimated savings per year in <strong style={{color:C.t1}}>{ST[target]?.n}</strong></div></> 
+              : netDiff<-500 ? <><div style={{color:C.rd,fontSize:20,fontWeight:700,fontFamily:fm}}>+${$$(-netDiff)}</div><div style={{color:C.t3,fontSize:12}}>more per year in <strong style={{color:C.t1}}>{ST[target]?.n}</strong></div></>
+              : <div style={{color:C.t4,fontSize:13}}>Similar total tax burden</div>}
+            </Box>
+
+            <div style={{color:C.t4,fontSize:10,marginTop:8,lineHeight:1.5}}>Property tax estimated on ${$$(homeValue)} home value (adjust above). Sales tax estimated on 35% of income spent on taxable goods. Actual burden varies by locality.</div>
+          </>;
+        })()}
+
+        <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginTop:16,marginBottom:6}}>Zero-tax states</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:6}}>
-          {Object.entries(ST).filter(([,s])=>s.t==="0").map(([c,s])=><Box key={c} onClick={()=>setTarget(c)} style={{padding:11,textAlign:"center",cursor:"pointer",border:`1px solid ${target===c?C.em:C.bd}`}}><div style={{color:C.t1,fontSize:12,fontWeight:600,marginBottom:2}}>{s.n}</div><Chip color={C.em}>$0</Chip></Box>)}
+          {Object.entries(ST).filter(([,s])=>s.t==="0").map(([c,s])=><Box key={c} onClick={()=>setTarget(c)} style={{padding:11,textAlign:"center",cursor:"pointer",border:`1px solid ${target===c?C.em:C.bd}`}}><div style={{color:C.t1,fontSize:12,fontWeight:600,marginBottom:2}}>{s.n}</div><Chip color={C.em}>$0 income</Chip>{STX[c]&&STX[c].p>1.5&&<div style={{color:C.yl,fontSize:9,marginTop:2}}>{STX[c].p}% property</div>}</Box>)}
+        </div>
         </div>
         {!isPro && <div style={{marginTop:16,textAlign:"center"}}><button onClick={onUpgrade} style={{padding:"8px 20px",borderRadius:9,border:`1px solid ${C.emx}0.2)`,background:`${C.emx}0.06)`,color:C.em,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:ff}}>🔮 Unlock 3-Year Projections with Pro</button></div>}
       </div>}
       {sub === "proj" && <div style={{marginTop:14}}>
-        <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser="Model portfolio growth, tax strategies, and state changes over 3 years." label="Pro Feature">
+        <ProGate isPro={isPro} onUpgrade={onUpgrade} teaser="Model income growth, life events, and tax strategies over 3 years." label="Pro Feature">
           <Box style={{marginBottom:12}}><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
             <SelectField label="State" value={projState} onChange={setProjState} options={Object.entries(ST).sort((a,b)=>a[1].n.localeCompare(b[1].n)).map(([k,v])=>[k,v.n])}/>
-            <Slider label="Growth" value={growth} onChange={setGrowth} min={-20} max={40} step={5} fmt={v=>`${v}%`} color={growth>=0?C.em:C.rd}/>
-            <div><label style={{color:C.t3,fontSize:10,fontWeight:600,textTransform:"uppercase",display:"block",marginBottom:5}}>Strategy</label><div style={{display:"flex",gap:3}}>{[["hold","💎 Hold"],["sell","💰 Sell"],["harvest","🌾 Harvest"]].map(([id,l])=><button key={id} onClick={()=>setStrategy(id)} style={{flex:1,padding:"6px",borderRadius:6,border:"none",cursor:"pointer",background:strategy===id?C.em:"transparent",color:strategy===id?C.bg:C.t3,fontSize:11,fontWeight:600,fontFamily:ff}}>{l}</button>)}</div></div>
+            <Slider label="Annual Raise" value={growth} onChange={setGrowth} min={0} max={30} step={2} fmt={v=>`${v}%`} color={C.em}/>
+            <div><label style={{color:C.t3,fontSize:10,fontWeight:600,textTransform:"uppercase",display:"block",marginBottom:5}}>Scenario</label><div style={{display:"flex",gap:3}}>{[["base","📊 Base"],["max","🚀 Max 401k"],["scorp","🏢 S-Corp"]].map(([id,l])=><button key={id} onClick={()=>setStrategy(id)} style={{flex:1,padding:"6px",borderRadius:6,border:"none",cursor:"pointer",background:strategy===id?C.em:"transparent",color:strategy===id?C.bg:C.t3,fontSize:11,fontWeight:600,fontFamily:ff}}>{l}</button>)}</div></div>
           </div></Box>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-            {proj.map((p,i)=>(<Box key={p.yr}><div style={{display:"flex",justifyContent:"space-between",marginBottom:7}}><span style={{color:C.em,fontSize:17,fontWeight:700,fontFamily:fm}}>{p.yr}</span><Chip>Y{i+1}</Chip></div><div style={{color:C.t1,fontSize:16,fontWeight:700,fontFamily:fm,marginBottom:7}}>${$$(p.pv)}</div><Row l="Federal" r={`$${$$(p.fed)}`}/><Row l="State" r={`$${$$(p.st)}`} color={p.st===0?C.em:C.t1}/>{p.se>0&&<Row l="SE" r={`$${$$(p.se)}`} color={C.pu}/>}<div style={{borderTop:`1px solid ${C.bd}`,marginTop:4,paddingTop:4}}><Row l="Net" r={`$${$$(p.total)}`} color={C.rd}/></div></Box>))}
+            {proj.map((p,i)=>(<Box key={p.yr}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:7}}><span style={{color:C.em,fontSize:17,fontWeight:700,fontFamily:fm}}>{p.yr}</span><Chip>Y{i+1}</Chip></div>
+              <div style={{color:C.t3,fontSize:10,marginBottom:2}}>Income</div>
+              <div style={{color:C.t1,fontSize:15,fontWeight:700,fontFamily:fm,marginBottom:6}}>${$$(p.inc)}</div>
+              <Row l="Federal" r={`$${$$(p.fed)}`}/>
+              <Row l="State" r={`$${$$(p.st)}`} color={p.st===0?C.em:C.t1}/>
+              {p.se>0&&<Row l="SE" r={`$${$$(p.se)}`} color={C.pu}/>}
+              <div style={{borderTop:`1px solid ${C.bd}`,marginTop:4,paddingTop:4}}>
+                <Row l="Total Tax" r={`$${$$(p.total)}`} color={C.rd}/>
+                <Row l="Eff. Rate" r={pct(p.inc>0?p.total/p.inc:0)} color={C.bl} sub/>
+              </div>
+              {p.saved>0&&<div style={{marginTop:4,padding:"4px 8px",background:`${C.emx}0.08)`,borderRadius:6}}><Row l="Saved vs base" r={`$${$$(p.saved)}`} color={C.em}/></div>}
+            </Box>))}
           </div>
+          {/* Summary insight */}
+          {proj.length===3 && (()=>{
+            const totalTaxPaid = proj.reduce((s,p)=>s+p.total,0);
+            const totalSaved = proj.reduce((s,p)=>s+p.saved,0);
+            return <Box style={{marginTop:10,borderLeft:`3px solid ${totalSaved>0?C.em:C.bl}`,padding:14}}>
+              <div style={{color:C.t3,fontSize:12,lineHeight:1.6}}>
+                <strong style={{color:C.t1}}>3-year outlook:</strong> With {growth}% annual raises{strategy==="max"?" and maxed 401(k)":strategy==="scorp"?" and S-Corp election":""}, you'll earn <strong style={{color:C.t1}}>${$$(proj.reduce((s,p)=>s+p.inc,0))}</strong> and pay <strong style={{color:C.rd}}>${$$(totalTaxPaid)}</strong> in taxes over 3 years.
+                {totalSaved>1000 && <> The {strategy==="max"?"max 401(k)":"S-Corp"} strategy saves <strong style={{color:C.em}}>${$$(totalSaved)}</strong> compared to your current setup.</>}
+              </div>
+            </Box>;
+          })()}
         </ProGate>
       </div>}
     </div>
@@ -993,6 +1152,8 @@ function Compliance({ isPro, onUpgrade, isMobile, profile }) {
   const [open, setOpen] = useState(null);
   const [done, setDone] = useState({});
   const [loaded, setLoaded] = useState(false);
+  const [intlSort, setIntlSort] = useState("tax"); // tax, savings, crypto
+  const [intlFilter, setIntlFilter] = useState("all"); // all, nomad, crypto0
   useEffect(() => { if (!isPro) return; try{const r=localStorage.getItem("taxiq-compliance");if(r)setDone(JSON.parse(r));}catch{} setLoaded(true); }, [isPro]);
   const toggle = useCallback((fw,si,ii) => {
     if (!isPro) return;
@@ -1040,8 +1201,101 @@ function Compliance({ isPro, onUpgrade, isMobile, profile }) {
           </Box>}
         </div>
       );})}
-      <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginTop:18,marginBottom:8}}>International tax rates</div>
-      <Box style={{padding:0}}>{INTL.map((j,i)=>(<div key={i} style={{display:"flex",alignItems:"center",padding:"9px 14px",borderBottom:i<INTL.length-1?`1px solid ${C.bd}`:"none"}}><span style={{fontSize:16,marginRight:10}}>{j.f}</span><div style={{flex:1}}><div style={{color:C.t1,fontSize:12,fontWeight:600}}>{j.n}</div></div><div style={{textAlign:"right"}}><div style={{color:C.t1,fontSize:12,fontFamily:fm}}>{j.lt}</div><div style={{color:C.t4,fontSize:10}}>{j.cr}</div></div></div>))}</Box>
+      <div style={{color:C.t3,fontSize:9.5,fontWeight:600,textTransform:"uppercase",marginTop:18,marginBottom:8}}>Global tax comparison <Chip color={C.bl}>Your income: ${$$(totalIncome)}</Chip></div>
+
+      {/* Compute all country taxes */}
+      {(()=>{
+        const usTax = (function(){ const s=calcSt(profile.state,totalIncome,0); const f=calcFed(totalIncome,0,0,profile.filing,s.tax); return f.tot+s.tax; })();
+        const countries = INTL.map(j => {
+          const tax = j.home ? usTax : Math.round(j.inc(totalIncome));
+          const effR = totalIncome>0 ? tax/totalIncome : 0;
+          const savings = usTax - tax;
+          const colAdj = j.col ? Math.round(totalIncome * j.col) : totalIncome;
+          const afterTaxCOL = j.home ? totalIncome - tax : colAdj - tax;
+          return {...j, tax, effR, savings, colAdj, afterTaxCOL };
+        });
+
+        const best = countries.filter(c=>!c.home).sort((a,b)=>a.tax-b.tax)[0];
+        const bestCOL = countries.filter(c=>!c.home).sort((a,b)=>b.afterTaxCOL-a.afterTaxCOL)[0];
+        const bestCrypto = countries.filter(c=>!c.home&&c.crypto.includes("0%")).sort((a,b)=>a.tax-b.tax)[0];
+
+        let filtered = countries;
+        if (intlFilter==="nomad") filtered = countries.filter(c=>c.nomad||c.home);
+        if (intlFilter==="crypto0") filtered = countries.filter(c=>c.crypto.includes("0%")||c.home);
+        
+        if (intlSort==="tax") filtered.sort((a,b) => a.home?-1:b.home?1:a.tax-b.tax);
+        if (intlSort==="savings") filtered.sort((a,b) => a.home?-1:b.home?1:b.savings-a.savings);
+        if (intlSort==="col") filtered.sort((a,b) => a.home?-1:b.home?1:b.afterTaxCOL-a.afterTaxCOL);
+
+        return <>
+          {/* Best-for-you summary */}
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+            {best&&<Box style={{padding:12,textAlign:"center",borderLeft:`3px solid ${C.em}`}}>
+              <div style={{color:C.t4,fontSize:9.5,fontWeight:600,textTransform:"uppercase"}}>Lowest tax</div>
+              <div style={{fontSize:16,marginTop:2}}>{best.f}</div>
+              <div style={{color:C.t1,fontSize:12,fontWeight:600}}>{best.n}</div>
+              <div style={{color:C.em,fontSize:13,fontWeight:700,fontFamily:fm,marginTop:2}}>${$$(best.tax)}</div>
+              <div style={{color:C.em,fontSize:10}}>Save ${$$(best.savings)}/yr</div>
+            </Box>}
+            {bestCOL&&<Box style={{padding:12,textAlign:"center",borderLeft:`3px solid ${C.yl}`}}>
+              <div style={{color:C.t4,fontSize:9.5,fontWeight:600,textTransform:"uppercase"}}>Best purchasing power</div>
+              <div style={{fontSize:16,marginTop:2}}>{bestCOL.f}</div>
+              <div style={{color:C.t1,fontSize:12,fontWeight:600}}>{bestCOL.n}</div>
+              <div style={{color:C.yl,fontSize:13,fontWeight:700,fontFamily:fm,marginTop:2}}>${$$(bestCOL.afterTaxCOL)}</div>
+              <div style={{color:C.yl,fontSize:10}}>after tax + COL adj.</div>
+            </Box>}
+            {bestCrypto&&<Box style={{padding:12,textAlign:"center",borderLeft:`3px solid ${C.pu}`}}>
+              <div style={{color:C.t4,fontSize:9.5,fontWeight:600,textTransform:"uppercase"}}>Best for crypto</div>
+              <div style={{fontSize:16,marginTop:2}}>{bestCrypto.f}</div>
+              <div style={{color:C.t1,fontSize:12,fontWeight:600}}>{bestCrypto.n}</div>
+              <div style={{color:C.pu,fontSize:11,fontWeight:600,marginTop:2}}>0% crypto + ${$$(bestCrypto.tax)} income</div>
+            </Box>}
+          </div>
+
+          {/* Filter + sort controls */}
+          <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+            {[["all","All"],["nomad","🌏 Nomad-friendly"],["crypto0","₿ 0% crypto"]].map(([id,l])=>(
+              <button key={id} onClick={()=>setIntlFilter(id)} style={{padding:"5px 12px",borderRadius:7,border:"none",background:intlFilter===id?C.em:"transparent",color:intlFilter===id?C.bg:C.t3,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:ff}}>{l}</button>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:6,marginBottom:10}}>
+            <span style={{color:C.t4,fontSize:10,lineHeight:"26px"}}>Sort:</span>
+            {[["tax","Lowest tax"],["savings","Most savings"],["col","Purchasing power"]].map(([id,l])=>(
+              <button key={id} onClick={()=>setIntlSort(id)} style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${intlSort===id?C.em:C.bd}`,background:"transparent",color:intlSort===id?C.em:C.t3,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:ff}}>{l}</button>
+            ))}
+          </div>
+
+          {/* Country list */}
+          <Box style={{padding:0}}>{filtered.map((j,i)=>{
+            return (<div key={i} style={{padding:"12px 14px",borderBottom:i<filtered.length-1?`1px solid ${C.bd}`:"none"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:18}}>{j.f}</span>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                    <span style={{color:C.t1,fontSize:12.5,fontWeight:600}}>{j.n}</span>
+                    {j.home && <Chip color={C.em}>YOU</Chip>}
+                    {!j.home && j.savings > 1000 && <Chip color={C.em}>Save ${$$(j.savings)}</Chip>}
+                    {!j.home && j.savings < -1000 && <Chip color={C.rd}>+${$$(-j.savings)}</Chip>}
+                    {j.nomad && !j.home && <Chip color={C.bl}>Nomad</Chip>}
+                  </div>
+                  <div style={{display:"flex",gap:12,marginTop:3,flexWrap:"wrap"}}>
+                    <span style={{color:C.t4,fontSize:10}}>Cap gains: <strong style={{color:C.t3}}>{j.cg}</strong></span>
+                    <span style={{color:C.t4,fontSize:10}}>Crypto: <strong style={{color:j.crypto.includes("0%")?C.em:C.t3}}>{j.crypto}</strong></span>
+                    {j.col && !j.home && <span style={{color:C.t4,fontSize:10}}>COL: <strong style={{color:j.col<0.6?C.em:j.col<0.9?C.yl:C.t3}}>{j.col<0.5?"Very low":j.col<0.7?"Low":j.col<0.9?"Moderate":j.col<1.1?"Similar":"High"}</strong></span>}
+                  </div>
+                  {j.note && <div style={{color:C.t4,fontSize:10,marginTop:2,fontStyle:"italic"}}>{j.note}</div>}
+                </div>
+                <div style={{textAlign:"right",minWidth:70}}>
+                  <div style={{color:j.home?C.t1:j.tax<usTax?C.em:C.t1,fontSize:14,fontWeight:700,fontFamily:fm}}>${$$(j.tax)}</div>
+                  <div style={{color:C.t4,fontSize:10}}>{pct(j.effR)} eff.</div>
+                </div>
+              </div>
+            </div>);
+          })}</Box>
+
+          <div style={{color:C.t4,fontSize:10,marginTop:8,lineHeight:1.5}}>Income tax calculated on ${$$(totalIncome)} income. Tax formulas are simplified estimates — actual obligations depend on residency, treaties, and local rules. COL index: 1.0 = US average. Always consult a cross-border tax specialist.</div>
+        </>;
+      })()}
     </div>
   );
 }
